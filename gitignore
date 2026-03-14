@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+*.pyc
+speechfire.log
+*.lock
+speechfire_config.json
+build/
+dist/
+*.spec
