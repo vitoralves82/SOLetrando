@@ -295,6 +295,7 @@ def load_model_with_progress(model_name, device, compute_type):
     return result["model"]
 
 
+ensure_single_instance()
 model = load_model_with_progress(config["model"], device, compute_type)
 log("Modelo carregado com sucesso")
 close_splash()
@@ -773,8 +774,6 @@ def on_uninstall(icon, item):
 # =====================================================================
 def main():
     global tray_icon
-
-    ensure_single_instance()
 
     log("=" * 55)
     log("Soletrando ativo")
