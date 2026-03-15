@@ -370,19 +370,34 @@ def make_icon_image(color, letter="S"):
     return img
 
 
+def load_icon(state):
+    """Carrega PNG do estado; fallback para icone gerado."""
+    icon_map = {
+        "idle": "icon_idle.png",
+        "recording": "icon_recording.png",
+        "transcribing": "icon_transcribing.png",
+    }
+    try:
+        icon_path = INSTALL_DIR / icon_map.get(state, "icon_idle.png")
+        if icon_path.exists():
+            return Image.open(icon_path).resize((64, 64), Image.LANCZOS)
+    except Exception as e:
+        log(f"Erro ao carregar icone {state}: {e}")
+    colors = {"idle": COLOR_IDLE, "recording": COLOR_REC, "transcribing": "#FF0000"}
+    return make_icon_image(colors.get(state, COLOR_IDLE), "S")
+
+
 def update_tray(state):
     global tray_icon
     if tray_icon is None:
         return
     try:
+        tray_icon.icon = load_icon(state)
         if state == "recording":
-            tray_icon.icon = make_icon_image(COLOR_REC, "S")
             tray_icon.title = "SOLetrando - Gravando..."
         elif state == "transcribing":
-            tray_icon.icon = make_icon_image(COLOR_TRANSCRIBING, "S")
-            tray_icon.title = "SOLetrando - Transcrevendo..."
+            tray_icon.title = "SOLetrando - Transcrevendo... aguarde"
         else:
-            tray_icon.icon = make_icon_image(COLOR_IDLE, "S")
             tray_icon.title = f"SOLetrando - {config['hotkey_toggle'].title()} para gravar"
     except Exception as e:
         log(f"Erro ao atualizar tray: {e}")
@@ -510,6 +525,28 @@ def start_recording():
 
 
 # =====================================================================
+# CLIPBOARD
+# =====================================================================
+def copy_to_clipboard(text):
+    """Copia texto para o clipboard do Windows via ctypes (sem dependencias)."""
+    try:
+        user32 = ctypes.windll.user32
+        kernel32 = ctypes.windll.kernel32
+        user32.OpenClipboard(0)
+        user32.EmptyClipboard()
+        data = text.encode('utf-16-le') + b'\x00\x00'
+        hMem = kernel32.GlobalAlloc(0x0042, len(data))
+        pMem = kernel32.GlobalLock(hMem)
+        ctypes.cdll.msvcrt.memcpy(ctypes.c_void_p(pMem), data, len(data))
+        kernel32.GlobalUnlock(hMem)
+        user32.SetClipboardData(13, hMem)
+        user32.CloseClipboard()
+        log("Texto copiado para clipboard")
+    except Exception as e:
+        log(f"Erro ao copiar para clipboard: {e}")
+
+
+# =====================================================================
 # INSERIR TEXTO
 # =====================================================================
 def insert_text(text):
@@ -603,6 +640,7 @@ def stop_and_transcribe():
         return
 
     log(f"Texto: {text}")
+    copy_to_clipboard(text)
     insert_text(text)
     update_tray("idle")
     is_transcribing = False
@@ -619,10 +657,11 @@ def toggle():
         return
     last_toggle_time = now
 
+    if is_transcribing:
+        log("Toggle ignorado - transcricao em andamento")
+        return
+
     with toggle_lock:
-        if is_transcribing:
-            log("Transcricao em andamento, aguarde...")
-            return
         if not is_recording:
             if config["beep_enabled"]:
                 beep_start()
@@ -787,7 +826,7 @@ def main():
 
     tray_icon = pystray.Icon(
         name="SOLetrando",
-        icon=make_icon_image(COLOR_IDLE, "S"),
+        icon=load_icon("idle"),
         title=f"SOLetrando - {config['hotkey_toggle'].title()} para gravar",
         menu=build_menu(),
     )

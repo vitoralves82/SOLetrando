@@ -32,3 +32,16 @@ images[-1].save(
     append_images=images[:-1],
 )
 print("[OK] assets/icon.ico gerado com sucesso")
+
+# Copia para a raiz do projeto tambem
+images[-1].save(
+    "soletrando.ico",
+    format="ICO",
+    sizes=[(s, s) for s in sizes],
+    append_images=images[:-1],
+)
+print("[OK] soletrando.ico gerado com sucesso")
+
+# Salva PNG 256x256 na raiz
+images[-1].save("icon.png", format="PNG")
+print("[OK] icon.png gerado com sucesso")
