@@ -108,9 +108,9 @@ config = load_config()
 # =====================================================================
 # ARGUMENTOS (override da config)
 # =====================================================================
-parser = argparse.ArgumentParser()
-parser.add_argument("--model", default=None)
-parser.add_argument("--language", default=None)
+parser = argparse.ArgumentParser(description="Soletrando - Ditado por voz local")
+parser.add_argument("--model", default=None, help="Modelo Whisper: tiny, base, small, medium (padrao), large-v3")
+parser.add_argument("--language", default=None, help="Idioma: pt (padrao), en, es, fr, de... ou vazio para deteccao automatica")
 args = parser.parse_args()
 
 if args.model:
