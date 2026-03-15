@@ -52,7 +52,8 @@ Os atalhos podem ser alterados pelo menu de clique direito no ícone da bandeja.
 
 1. Vá em [GitHub Releases](https://github.com/vitoralves82/SOLetrando/releases) e baixe o `.zip` da última versão
 2. Extraia o conteúdo do `.zip`
-3. Execute `soletrando.exe`
+3. Execute `install.bat` para criar atalhos no Desktop e Startup automaticamente
+4. Ou execute `soletrando.exe` diretamente
 
 Sem necessidade de Python, Git ou terminal.
 
@@ -87,6 +88,12 @@ Modo silencioso (sem janela de console — recomendado):
 
 ```powershell
 .\.venv\Scripts\pythonw.exe soletrando.py
+```
+
+Para criar atalhos no Desktop e Startup automaticamente:
+
+```powershell
+python install.py
 ```
 
 ### Opção C: Gerar executável .exe a partir do código-fonte
@@ -184,8 +191,11 @@ Clique com o botão direito no ícone "S" na bandeja do sistema:
 ```
 soletrando/
 ├── soletrando.py              # Script principal
+├── install.bat                # Instalador (wrapper)
+├── install.py                 # Instalador (cria atalhos Desktop/Startup)
 ├── soletrando_startup.vbs     # Inicialização automática no Windows (VBS)
 ├── build.bat                  # Script de build (PyInstaller)
+├── version.txt                # Versão do aplicativo
 ├── requirements.txt
 ├── .gitignore
 ├── LICENSE
@@ -271,7 +281,8 @@ Hotkeys can be changed via the tray icon right-click menu. Changes are saved aut
 
 1. Go to [GitHub Releases](https://github.com/vitoralves82/SOLetrando/releases) and download the `.zip` from the latest version
 2. Extract the `.zip` contents
-3. Run `soletrando.exe`
+3. Run `install.bat` to create Desktop and Startup shortcuts automatically
+4. Or run `soletrando.exe` directly
 
 No Python, Git, or terminal needed.
 
@@ -306,6 +317,12 @@ Headless mode (no console window — recommended):
 
 ```powershell
 .\.venv\Scripts\pythonw.exe soletrando.py
+```
+
+To create Desktop and Startup shortcuts automatically:
+
+```powershell
+python install.py
 ```
 
 ### Option C: Build standalone .exe from source
