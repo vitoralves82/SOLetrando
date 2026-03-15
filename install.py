@@ -36,18 +36,18 @@ def get_context():
 
 def create_shortcut(target, shortcut_path, working_dir, arguments="", icon_path=None, description=""):
     """Cria atalho .lnk via PowerShell (sem dependencias COM)."""
-    icon_line = f'$s.IconLocation = "{icon_path}"' if icon_path else ""
-    args_line = f'$s.Arguments = "{arguments}"' if arguments else ""
-    ps_script = f'''
-$ws = New-Object -ComObject WScript.Shell
-$s = $ws.CreateShortcut("{shortcut_path}")
-$s.TargetPath = "{target}"
-$s.WorkingDirectory = "{working_dir}"
-$s.Description = "{description}"
-{args_line}
-{icon_line}
-$s.Save()
-'''
+    ps_script = (
+        '$ws = New-Object -ComObject WScript.Shell; '
+        f'$s = $ws.CreateShortcut("{shortcut_path}"); '
+        f'$s.TargetPath = "{target}"; '
+        f'$s.WorkingDirectory = "{working_dir}"; '
+        f'$s.Description = "{description}"; '
+    )
+    if arguments:
+        ps_script += f'$s.Arguments = "{arguments}"; '
+    if icon_path:
+        ps_script += f'$s.IconLocation = "{icon_path}"; '
+    ps_script += '$s.Save()'
     subprocess.run(
         ["powershell", "-NoProfile", "-Command", ps_script],
         check=True,
