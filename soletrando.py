@@ -18,6 +18,46 @@ import atexit
 from pathlib import Path
 from datetime import datetime
 
+# =====================================================================
+# SPLASH SCREEN (fecha automaticamente ao carregar o modelo)
+# =====================================================================
+_splash = None
+
+def show_splash():
+    global _splash
+    try:
+        import tkinter as tk
+        _splash = tk.Tk()
+        _splash.overrideredirect(True)
+        _splash.attributes("-topmost", True)
+        w, h = 300, 100
+        x = (_splash.winfo_screenwidth() - w) // 2
+        y = (_splash.winfo_screenheight() - h) // 2
+        _splash.geometry(f"{w}x{h}+{x}+{y}")
+        _splash.configure(bg="#1a1a2e")
+        lbl = tk.Label(
+            _splash,
+            text="Soletrando\nCarregando modelo...",
+            font=("Segoe UI", 14),
+            fg="white",
+            bg="#1a1a2e",
+        )
+        lbl.pack(expand=True)
+        _splash.update()
+    except Exception:
+        _splash = None
+
+def close_splash():
+    global _splash
+    if _splash is not None:
+        try:
+            _splash.destroy()
+        except Exception:
+            pass
+        _splash = None
+
+show_splash()
+
 warnings.filterwarnings("ignore")
 
 # =====================================================================
@@ -142,13 +182,16 @@ import pystray
 # =====================================================================
 # DETECCAO DE GPU (sem torch)
 # =====================================================================
-try:
-    import ctranslate2
-    has_cuda = ctranslate2.get_cuda_device_count() > 0
-except Exception:
-    has_cuda = False
+import ctypes
 
-if has_cuda:
+def _cuda_available():
+    try:
+        ctypes.CDLL("nvcuda.dll")
+        return True
+    except OSError:
+        return False
+
+if _cuda_available():
     device = "cuda"
     compute_type = "float16"
     log(f"Carregando faster-whisper '{config['model']}' na GPU (float16)...")
@@ -234,6 +277,7 @@ def load_model_with_progress(model_name, device, compute_type):
 
 model = load_model_with_progress(config["model"], device, compute_type)
 log("Modelo carregado com sucesso")
+close_splash()
 
 # =====================================================================
 # ESTADO GLOBAL

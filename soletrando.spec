@@ -38,6 +38,11 @@ excludes = [
     'IPython',
     'jupyter_client',
     'jupyter_core',
+    'rich',
+    'pygments',
+    'anyio',
+    'sniffio',
+    'tensorflow',
 ]
 
 a = Analysis(
