@@ -1,5 +1,5 @@
 """
-install.py - Instalador do Soletrando
+install.py - Alternativa ao install.bat - requer Python instalado
 Cria atalhos no Desktop e no Startup do Windows.
 Funciona tanto para o .exe (dist) quanto para codigo-fonte.
 Usa apenas stdlib + PowerShell (sem dependencias extras).
