@@ -10,15 +10,7 @@ set "PYEXE=.venv\Scripts\python.exe"
 if not exist "%PYEXE%" set "PYEXE=python"
 
 echo.
-echo [1/3] Gerando icone...
-if not exist "assets" mkdir assets
-"%PYEXE%" generate_icon.py
-if errorlevel 1 (
-  echo [AVISO] Falha ao gerar icone, continuando sem icone personalizado...
-)
-
-echo.
-echo [2/3] Gerando executavel via PyInstaller...
+echo [1/2] Gerando executavel via PyInstaller...
 if exist build rmdir /s /q build
 if exist dist rmdir /s /q dist
 "%PYEXE%" -m PyInstaller --noconfirm --clean soletrando.spec
@@ -29,7 +21,7 @@ if errorlevel 1 (
 )
 
 echo.
-echo [3/3] Gerando instalador via Inno Setup...
+echo [2/2] Gerando instalador via Inno Setup...
 where iscc >nul 2>&1
 if errorlevel 1 (
   echo [AVISO] Inno Setup (iscc) nao encontrado no PATH.

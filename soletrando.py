@@ -27,22 +27,42 @@ def show_splash():
     global _splash
     try:
         import tkinter as tk
+        from PIL import Image, ImageTk
+
         _splash = tk.Tk()
         _splash.overrideredirect(True)
         _splash.attributes("-topmost", True)
-        w, h = 300, 100
+        w, h = 320, 200
         x = (_splash.winfo_screenwidth() - w) // 2
         y = (_splash.winfo_screenheight() - h) // 2
         _splash.geometry(f"{w}x{h}+{x}+{y}")
         _splash.configure(bg="#1a1a2e")
-        lbl = tk.Label(
-            _splash,
-            text="SOLetrando\nCarregando modelo...",
-            font=("Segoe UI", 14),
-            fg="white",
-            bg="#1a1a2e",
-        )
-        lbl.pack(expand=True)
+
+        # Icone
+        if getattr(sys, "frozen", False):
+            base = Path(sys.executable).parent
+        else:
+            base = Path(__file__).parent
+        icon_path = base / "icon_idle.png"
+        if icon_path.exists():
+            icon_img = Image.open(icon_path).resize((64, 64), Image.LANCZOS)
+            icon_photo = ImageTk.PhotoImage(icon_img)
+            icon_label = tk.Label(_splash, image=icon_photo, bg="#1a1a2e")
+            icon_label.image = icon_photo
+            icon_label.pack(pady=(20, 5))
+
+        # Nome
+        tk.Label(
+            _splash, text="SOLetrando",
+            font=("Segoe UI", 18), fg="white", bg="#1a1a2e",
+        ).pack(pady=(5, 2))
+
+        # Status
+        tk.Label(
+            _splash, text="Carregando modelo...",
+            font=("Segoe UI", 12), fg="#aaaaaa", bg="#1a1a2e",
+        ).pack(pady=(2, 10))
+
         _splash.update()
     except Exception:
         _splash = None
