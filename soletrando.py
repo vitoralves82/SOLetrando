@@ -127,20 +127,37 @@ MODEL_OPTIONS = [
     ("large-v3", "large-v3"),
 ]
 
+VALID_HOTKEY_TOGGLE_KEYS = {key for _, key in HOTKEY_OPTIONS}
+VALID_HOTKEY_QUIT_KEYS = {"ctrl+shift+q", "ctrl+alt+q", "ctrl+shift+e"}
+VALID_MODEL_KEYS = {key for _, key in MODEL_OPTIONS}
+
+
+def sanitize_config(cfg):
+    """Normaliza configuracao para evitar valores invalidos/corrompidos."""
+    normalized = dict(DEFAULT_CONFIG)
+    if isinstance(cfg, dict):
+        normalized.update(cfg)
+
+    if normalized["hotkey_toggle"] not in VALID_HOTKEY_TOGGLE_KEYS:
+        normalized["hotkey_toggle"] = DEFAULT_CONFIG["hotkey_toggle"]
+    if normalized["hotkey_quit"] not in VALID_HOTKEY_QUIT_KEYS:
+        normalized["hotkey_quit"] = DEFAULT_CONFIG["hotkey_quit"]
+    if normalized["model"] not in VALID_MODEL_KEYS:
+        normalized["model"] = DEFAULT_CONFIG["model"]
+    if not isinstance(normalized.get("beep_enabled"), bool):
+        normalized["beep_enabled"] = DEFAULT_CONFIG["beep_enabled"]
+    return normalized
+
 
 def load_config():
     try:
         if CONFIG_PATH.exists():
             with CONFIG_PATH.open("r", encoding="utf-8") as f:
                 cfg = json.load(f)
-            # Preenche campos ausentes
-            for k, v in DEFAULT_CONFIG.items():
-                if k not in cfg:
-                    cfg[k] = v
-            return cfg
+            return sanitize_config(cfg)
     except Exception as e:
         log(f"Erro ao carregar config: {e}")
-    return dict(DEFAULT_CONFIG)
+    return sanitize_config(DEFAULT_CONFIG)
 
 
 def save_config(cfg):
@@ -163,7 +180,10 @@ parser.add_argument("--language", default=None, help="Idioma: pt (padrao), en, e
 args = parser.parse_args()
 
 if args.model:
-    config["model"] = args.model
+    if args.model in VALID_MODEL_KEYS:
+        config["model"] = args.model
+    else:
+        log(f"Modelo invalido via argumento ({args.model}), usando '{config['model']}'")
 if args.language:
     config["language"] = args.language
 
@@ -287,6 +307,7 @@ MIN_DURATION_SECONDS = 0.5
 LOCK_FILE = Path(tempfile.gettempdir()) / "soletrando.lock"
 
 is_recording = False
+is_transcribing = False
 audio_frames = []
 stream = None
 toggle_lock = threading.Lock()
@@ -466,17 +487,25 @@ def start_recording():
     if is_recording:
         return
     audio_frames = []
+    try:
+        stream = sd.InputStream(
+            samplerate=SAMPLE_RATE,
+            channels=1,
+            dtype="float32",
+            callback=audio_callback,
+            blocksize=1024,
+        )
+        stream.start()
+    except Exception as e:
+        is_recording = False
+        stream = None
+        log(f"Falha ao iniciar gravacao: {e}")
+        update_tray("idle")
+        return
+
     is_recording = True
     log("REC iniciado")
     update_tray("recording")
-    stream = sd.InputStream(
-        samplerate=SAMPLE_RATE,
-        channels=1,
-        dtype="float32",
-        callback=audio_callback,
-        blocksize=1024,
-    )
-    stream.start()
 
 
 # =====================================================================
@@ -496,10 +525,12 @@ def insert_text(text):
 # TRANSCREVER
 # =====================================================================
 def stop_and_transcribe():
-    global is_recording, stream, audio_frames
+    global is_recording, stream, audio_frames, is_transcribing
 
     if not is_recording:
         return
+
+    is_transcribing = True
 
     is_recording = False
 
@@ -515,6 +546,7 @@ def stop_and_transcribe():
     if not audio_frames:
         log("Nenhum audio capturado")
         update_tray("idle")
+        is_transcribing = False
         return
 
     update_tray("transcribing")
@@ -525,6 +557,7 @@ def stop_and_transcribe():
     except Exception as e:
         log(f"Erro ao consolidar audio: {e}")
         update_tray("idle")
+        is_transcribing = False
         return
 
     peak = np.max(np.abs(audio_data)) if len(audio_data) else 0
@@ -533,6 +566,7 @@ def stop_and_transcribe():
     if peak < 0.01:
         log("Audio muito silencioso, ignorando")
         update_tray("idle")
+        is_transcribing = False
         return
 
     if peak > 0:
@@ -544,6 +578,7 @@ def stop_and_transcribe():
     if duration < MIN_DURATION_SECONDS:
         log("Audio muito curto, ignorando")
         update_tray("idle")
+        is_transcribing = False
         return
 
     try:
@@ -557,16 +592,19 @@ def stop_and_transcribe():
     except Exception as e:
         log(f"Erro na transcricao: {e}")
         update_tray("idle")
+        is_transcribing = False
         return
 
     if not text:
         log("Nenhuma fala detectada")
         update_tray("idle")
+        is_transcribing = False
         return
 
     log(f"Texto: {text}")
     insert_text(text)
     update_tray("idle")
+    is_transcribing = False
 
 
 # =====================================================================
@@ -581,14 +619,17 @@ def toggle():
     last_toggle_time = now
 
     with toggle_lock:
+        if is_transcribing:
+            log("Transcricao em andamento, aguarde...")
+            return
         if not is_recording:
             if config["beep_enabled"]:
                 beep_start()
             start_recording()
         else:
-            stop_and_transcribe()
             if config["beep_enabled"]:
                 beep_stop()
+            threading.Thread(target=stop_and_transcribe, daemon=True).start()
 
 
 # =====================================================================
