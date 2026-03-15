@@ -646,6 +646,8 @@ def build_menu():
         pystray.MenuItem("Abrir log", on_open_log),
         pystray.MenuItem("Abrir pasta", on_open_folder),
         pystray.Menu.SEPARATOR,
+        pystray.MenuItem("Desinstalar Soletrando...", on_uninstall),
+        pystray.Menu.SEPARATOR,
         pystray.MenuItem("Encerrar", on_tray_quit),
     )
 
@@ -668,6 +670,17 @@ def on_open_folder(icon, item):
         os.startfile(str(DATA_DIR))
     except Exception:
         pass
+
+
+def on_uninstall(icon, item):
+    """Abre a tela de desinstalacao do Windows para o Soletrando."""
+    try:
+        import subprocess
+        # Abre Configuracoes > Aplicativos direto na busca do Soletrando
+        subprocess.Popen(["cmd", "/c", "start", "ms-settings:appsfeatures"])
+        log("Tela de desinstalacao aberta")
+    except Exception as e:
+        log(f"Erro ao abrir desinstalacao: {e}")
 
 
 # =====================================================================
