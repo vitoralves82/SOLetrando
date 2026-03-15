@@ -1,9 +1,9 @@
 .venv/
 __pycache__/
 *.pyc
-speechfire.log
+soletrando.log
 *.lock
-speechfire_config.json
+soletrando_config.json
 build/
 dist/
 *.spec

@@ -3,7 +3,7 @@ setlocal
 cd /d "%~dp0"
 
 echo ============================================
-echo  Speechfire - Build do executavel (.exe)
+echo  Soletrando - Build do executavel (.exe)
 echo ============================================
 echo.
 
@@ -12,14 +12,14 @@ if not exist "%PYEXE%" set "PYEXE=python"
 
 echo [*] Usando Python: %PYEXE%
 
-if not exist "speechfire.py" (
-  echo [ERRO] speechfire.py nao encontrado.
+if not exist "soletrando.py" (
+  echo [ERRO] soletrando.py nao encontrado.
   pause
   exit /b 1
 )
 
-if not exist "speechfire.spec" (
-  echo [ERRO] speechfire.spec nao encontrado.
+if not exist "soletrando.spec" (
+  echo [ERRO] soletrando.spec nao encontrado.
   pause
   exit /b 1
 )
@@ -28,8 +28,8 @@ echo [*] Limpando builds anteriores...
 if exist build rmdir /s /q build
 if exist dist rmdir /s /q dist
 
-echo [*] Gerando via speechfire.spec...
-"%PYEXE%" -m PyInstaller --noconfirm --clean speechfire.spec
+echo [*] Gerando via soletrando.spec...
+"%PYEXE%" -m PyInstaller --noconfirm --clean soletrando.spec
 if errorlevel 1 (
   echo.
   echo ============================================
@@ -42,6 +42,6 @@ if errorlevel 1 (
 echo.
 echo ============================================
 echo  [OK] Build concluido.
-echo  Saida: dist\speechfire\speechfire.exe
+echo  Saida: dist\soletrando\soletrando.exe
 echo ============================================
 pause

@@ -38,7 +38,7 @@ excludes = [
 ]
 
 a = Analysis(
-    ['speechfire.py'],
+    ['soletrando.py'],
     pathex=[],
     binaries=binaries,
     datas=datas,
@@ -58,7 +58,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name='speechfire',
+    name='soletrando',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -79,5 +79,5 @@ coll = COLLECT(
     strip=False,
     upx=True,
     upx_exclude=[],
-    name='speechfire',
+    name='soletrando',
 )

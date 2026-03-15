@@ -1,9 +1,9 @@
 """
-Speechfire - Ditado por voz local
-faster-whisper + CUDA | Alternativa ao Wispr Flow
+Soletrando - Ditado por voz local
+faster-whisper + CUDA/CPU | Alternativa ao Wispr Flow
 
 Atalhos configuraveis via icone na bandeja do sistema.
-Configuracoes salvas em speechfire_config.json.
+Configuracoes salvas em soletrando_config.json.
 """
 
 import argparse
@@ -28,8 +28,8 @@ if getattr(sys, "frozen", False):
 else:
     BASE_DIR = Path(__file__).parent
 
-LOG_PATH = BASE_DIR / "speechfire.log"
-CONFIG_PATH = BASE_DIR / "speechfire_config.json"
+LOG_PATH = BASE_DIR / "soletrando.log"
+CONFIG_PATH = BASE_DIR / "soletrando_config.json"
 HAS_CONSOLE = sys.stdout is not None and hasattr(sys.stdout, "write")
 
 
@@ -118,7 +118,7 @@ if args.model:
 if args.language:
     config["language"] = args.language
 
-log(f"Iniciando Speechfire - modelo={config['model']}, idioma={config['language']}")
+log(f"Iniciando Soletrando - modelo={config['model']}, idioma={config['language']}")
 
 # =====================================================================
 # IMPORTS PESADOS
@@ -133,8 +133,18 @@ import pystray
 # =====================================================================
 # CARREGAR MODELO
 # =====================================================================
-log(f"Carregando faster-whisper '{config['model']}' na GPU (float16)...")
-model = WhisperModel(config["model"], device="cuda", compute_type="float16")
+import torch
+
+if torch.cuda.is_available():
+    device = "cuda"
+    compute_type = "float16"
+    log(f"Carregando faster-whisper '{config['model']}' na GPU (float16)...")
+else:
+    device = "cpu"
+    compute_type = "int8"
+    log(f"GPU nao disponivel. Carregando faster-whisper '{config['model']}' na CPU (int8)...")
+
+model = WhisperModel(config["model"], device=device, compute_type=compute_type)
 log("Modelo carregado com sucesso")
 
 # =====================================================================
@@ -142,7 +152,7 @@ log("Modelo carregado com sucesso")
 # =====================================================================
 SAMPLE_RATE = 16000
 MIN_DURATION_SECONDS = 0.5
-LOCK_FILE = Path(tempfile.gettempdir()) / "speechfire.lock"
+LOCK_FILE = Path(tempfile.gettempdir()) / "soletrando.lock"
 
 is_recording = False
 audio_frames = []
@@ -188,13 +198,13 @@ def update_tray(state):
     try:
         if state == "recording":
             tray_icon.icon = make_icon_image(COLOR_REC, "S")
-            tray_icon.title = "Speechfire - Gravando..."
+            tray_icon.title = "Soletrando - Gravando..."
         elif state == "transcribing":
             tray_icon.icon = make_icon_image(COLOR_TRANSCRIBING, "S")
-            tray_icon.title = "Speechfire - Transcrevendo..."
+            tray_icon.title = "Soletrando - Transcrevendo..."
         else:
             tray_icon.icon = make_icon_image(COLOR_IDLE, "S")
-            tray_icon.title = f"Speechfire - {config['hotkey_toggle'].title()} para gravar"
+            tray_icon.title = f"Soletrando - {config['hotkey_toggle'].title()} para gravar"
     except Exception as e:
         log(f"Erro ao atualizar tray: {e}")
 
@@ -437,7 +447,7 @@ def toggle():
 def shutdown():
     global is_recording, stream, tray_icon
 
-    log("Encerrando Speechfire")
+    log("Encerrando Soletrando")
 
     try:
         keyboard.unhook_all_hotkeys()
@@ -516,7 +526,7 @@ def build_menu():
     ]
 
     return pystray.Menu(
-        pystray.MenuItem(f"Speechfire ({config['model']})", None, enabled=False),
+        pystray.MenuItem(f"Soletrando ({config['model']})", None, enabled=False),
         pystray.Menu.SEPARATOR,
         pystray.MenuItem("Tecla de gravar", pystray.Menu(*toggle_items)),
         pystray.MenuItem("Tecla de encerrar", pystray.Menu(*quit_items)),
@@ -558,7 +568,7 @@ def main():
     ensure_single_instance()
 
     log("=" * 55)
-    log("Speechfire ativo")
+    log("Soletrando ativo")
     log(f"  Gravar/Parar  = {config['hotkey_toggle']}")
     log(f"  Encerrar      = {config['hotkey_quit']}")
     log(f"  Modelo        = {config['model']}")
@@ -567,9 +577,9 @@ def main():
     register_hotkeys()
 
     tray_icon = pystray.Icon(
-        name="Speechfire",
+        name="Soletrando",
         icon=make_icon_image(COLOR_IDLE, "S"),
-        title=f"Speechfire - {config['hotkey_toggle'].title()} para gravar",
+        title=f"Soletrando - {config['hotkey_toggle'].title()} para gravar",
         menu=build_menu(),
     )
 
