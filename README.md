@@ -1,11 +1,11 @@
-# Speechfire 🔥🎙️
+# Soletrando 🎙️
 
-Free, local, offline voice dictation for Windows — powered by [faster-whisper](https://github.com/SYSTRAN/faster-whisper) + CUDA.
+Free, local, offline voice dictation for Windows — powered by [faster-whisper](https://github.com/SYSTRAN/faster-whisper) + CUDA/CPU.
 
 Press **ScrollLock**, speak, press again. Text appears wherever your cursor is: Word, Notepad, browser, any app.
 
 ![Python](https://img.shields.io/badge/Python-3.10%2B-blue)
-![CUDA](https://img.shields.io/badge/CUDA-11.x%2F12.x-green)
+![CUDA](https://img.shields.io/badge/CUDA-optional-green)
 ![License](https://img.shields.io/badge/License-MIT-yellow)
 
 ---
@@ -19,6 +19,7 @@ Press **ScrollLock**, speak, press again. Text appears wherever your cursor is: 
 - **Auto-start** with Windows via VBS script or shortcut
 - **Standalone .exe** build option (no Python needed to run)
 - **Multi-language** — Portuguese, English, Spanish, French, and 90+ languages
+- **GPU optional** — runs on NVIDIA GPU (CUDA) for speed, or falls back to CPU automatically
 
 ---
 
@@ -37,8 +38,8 @@ Hotkeys can be changed via the tray icon right-click menu. Changes are saved aut
 
 - **Windows 10/11**
 - **Python 3.10+** (not needed if using the .exe build)
-- **NVIDIA GPU with CUDA** (tested on RTX 3060)
-- **NVIDIA drivers** with CUDA 11.x or 12.x support
+- **NVIDIA GPU with CUDA** (optional — tested on RTX 3060; falls back to CPU if unavailable)
+- **NVIDIA drivers** with CUDA 11.x or 12.x support (only if using GPU)
 - **Microphone**
 
 ---
@@ -48,8 +49,8 @@ Hotkeys can be changed via the tray icon right-click menu. Changes are saved aut
 ### Option A: Run from source
 
 ```powershell
-git clone https://github.com/YOUR_USER/speechfire.git
-cd speechfire
+git clone https://github.com/YOUR_USER/soletrando.git
+cd soletrando
 python -m venv .venv
 .\.venv\Scripts\activate
 ```
@@ -69,13 +70,13 @@ pip install -r requirements.txt
 Run:
 
 ```powershell
-python speechfire.py
+python soletrando.py
 ```
 
 Headless mode (no console window — recommended):
 
 ```powershell
-.\.venv\Scripts\pythonw.exe speechfire.py
+.\.venv\Scripts\pythonw.exe soletrando.py
 ```
 
 ### Option B: Build standalone .exe
@@ -86,7 +87,7 @@ After installing from source, run:
 build.bat
 ```
 
-The executable will be in `dist\speechfire\speechfire.exe`. Double-click to run — no Python or console needed.
+The executable will be in `dist\soletrando\soletrando.exe`. Double-click to run — no Python or console needed.
 
 ---
 
@@ -98,8 +99,8 @@ The executable will be in `dist\speechfire\speechfire.exe`. Double-click to run 
 ```
 
 ```powershell
-python speechfire.py --model large-v3
-python speechfire.py --model small --language en
+python soletrando.py --model large-v3
+python soletrando.py --model small --language en
 ```
 
 You can also change the model via the tray icon menu (requires restart).
@@ -120,17 +121,17 @@ You can also change the model via the tray icon menu (requires restart).
 
 ### From source
 
-Copy `speechfire_startup.vbs` to the Startup folder:
+Copy `soletrando_startup.vbs` to the Startup folder:
 
 ```powershell
-copy speechfire_startup.vbs "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup\"
+copy soletrando_startup.vbs "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup\"
 ```
 
 Edit the paths inside the `.vbs` file if needed.
 
 ### From .exe
 
-Create a shortcut to `dist\speechfire\speechfire.exe` and place it in:
+Create a shortcut to `dist\soletrando\soletrando.exe` and place it in:
 
 ```
 %APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\
@@ -140,7 +141,7 @@ Create a shortcut to `dist\speechfire\speechfire.exe` and place it in:
 
 ## Configuration
 
-Settings are saved in `speechfire_config.json` (same folder as the script/exe):
+Settings are saved in `soletrando_config.json` (same folder as the script/exe):
 
 ```json
 {
@@ -164,16 +165,16 @@ Right-click the "S" icon in the system tray:
 - **Modelo** — choose Whisper model (requires restart)
 - **Abrir log** — open the log file
 - **Abrir pasta** — open the installation folder
-- **Encerrar** — quit Speechfire
+- **Encerrar** — quit Soletrando
 
 ---
 
 ## Project Structure
 
 ```
-speechfire/
-├── speechfire.py              # Main script
-├── speechfire_startup.vbs     # Windows auto-start (VBS)
+soletrando/
+├── soletrando.py              # Main script
+├── soletrando_startup.vbs     # Windows auto-start (VBS)
 ├── build.bat                  # PyInstaller build script
 ├── requirements.txt
 ├── .gitignore
@@ -188,10 +189,10 @@ speechfire/
 | Problem | Solution |
 |---|---|
 | `No module named 'faster_whisper'` | `pip install faster-whisper` |
-| CUDA not detected | Check NVIDIA drivers and PyTorch CUDA version |
+| CUDA not detected | Program will fall back to CPU automatically. For GPU, check NVIDIA drivers and PyTorch CUDA version |
 | Microphone not detected | `python -c "import sounddevice; print(sounddevice.query_devices())"` |
 | Text not appearing in app | Make sure cursor is in the target app before pressing the hotkey |
-| "Instance already running" | Delete `%TEMP%\speechfire.lock` or kill `pythonw.exe` |
+| "Instance already running" | Delete `%TEMP%\soletrando.lock` or kill `pythonw.exe` |
 | Tray icon not visible | Click the `^` arrow in the taskbar to see hidden icons |
 
 ---
