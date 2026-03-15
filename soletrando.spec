@@ -23,6 +23,7 @@ hiddenimports = [
 ] + fw_hidden + ct_hidden
 
 datas = fw_datas + ct_datas
+datas += [('version.txt', '.')]
 binaries = fw_binaries + ct_binaries
 
 # Evita hooks desnecessarios que estao quebrando seu build
