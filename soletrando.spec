@@ -23,7 +23,7 @@ hiddenimports = [
 ] + fw_hidden + ct_hidden
 
 datas = fw_datas + ct_datas
-datas += [('version.txt', '.')]
+datas += [('version.txt', '.'), ('soletrando.ico', '.'), ('icon_idle.png', '.'), ('icon_recording.png', '.'), ('icon_transcribing.png', '.')]
 binaries = fw_binaries + ct_binaries
 
 # Evita hooks desnecessarios que estao quebrando seu build
@@ -78,7 +78,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon='assets\\icon.ico' if os.path.exists('assets\\icon.ico') else 'NONE',
+    icon='soletrando.ico' if os.path.exists('soletrando.ico') else ('assets\\icon.ico' if os.path.exists('assets\\icon.ico') else 'NONE'),
 )
 
 coll = COLLECT(
