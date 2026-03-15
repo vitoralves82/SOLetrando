@@ -1,5 +1,9 @@
 # SOLetrando 🎙️
 
+<p align="center">
+  <img src="icon.png" alt="SOLetrando" width="128">
+</p>
+
 Ditado por voz gratuito, local e offline para Windows — utilizando [faster-whisper](https://github.com/SYSTRAN/faster-whisper) + CUDA/CPU.
 
 Pressione **ScrollLock**, fale, pressione novamente. O texto aparece onde estiver o cursor: Word, Notepad, navegador, qualquer app.
@@ -234,6 +238,10 @@ MIT
 ---
 
 # <a id="english"></a>English
+
+<p align="center">
+  <img src="icon.png" alt="SOLetrando" width="128">
+</p>
 
 Free, local, offline voice dictation for Windows — powered by [faster-whisper](https://github.com/SYSTRAN/faster-whisper) + CUDA/CPU.
 
