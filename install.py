@@ -56,7 +56,18 @@ def create_shortcut(target, shortcut_path, working_dir, arguments="", icon_path=
 
 
 def get_desktop_path():
-    """Retorna o caminho do Desktop do usuario."""
+    """Retorna o caminho real do Desktop via Windows API (suporte OneDrive)."""
+    try:
+        result = subprocess.run(
+            ["powershell", "-NoProfile", "-Command",
+             "[Environment]::GetFolderPath('Desktop')"],
+            capture_output=True, text=True, check=True,
+        )
+        desktop = result.stdout.strip()
+        if desktop:
+            return Path(desktop)
+    except Exception:
+        pass
     return Path(os.path.expanduser("~")) / "Desktop"
 
 
