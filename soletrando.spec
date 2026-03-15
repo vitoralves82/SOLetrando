@@ -23,7 +23,7 @@ hiddenimports = [
 ] + fw_hidden + ct_hidden
 
 datas = fw_datas + ct_datas
-datas += [('version.txt', '.'), ('soletrando.ico', '.'), ('icon.png', '.')]
+datas += [('version.txt', '.'), ('soletrando.ico', '.'), ('icon_idle.png', '.'), ('icon_recording.png', '.'), ('icon_transcribing.png', '.')]
 binaries = fw_binaries + ct_binaries
 
 # Evita hooks desnecessarios que estao quebrando seu build

@@ -370,15 +370,21 @@ def make_icon_image(color, letter="S"):
     return img
 
 
-def load_tray_icon():
-    """Tenta carregar icon.png real; fallback para icone gerado."""
+def load_icon(state):
+    """Carrega PNG do estado; fallback para icone gerado."""
+    icon_map = {
+        "idle": "icon_idle.png",
+        "recording": "icon_recording.png",
+        "transcribing": "icon_transcribing.png",
+    }
     try:
-        icon_path = INSTALL_DIR / "icon.png"
+        icon_path = INSTALL_DIR / icon_map.get(state, "icon_idle.png")
         if icon_path.exists():
             return Image.open(icon_path).resize((64, 64), Image.LANCZOS)
-    except Exception:
-        pass
-    return make_icon_image(COLOR_IDLE, "S")
+    except Exception as e:
+        log(f"Erro ao carregar icone {state}: {e}")
+    colors = {"idle": COLOR_IDLE, "recording": COLOR_REC, "transcribing": "#FF0000"}
+    return make_icon_image(colors.get(state, COLOR_IDLE), "S")
 
 
 def update_tray(state):
@@ -386,14 +392,12 @@ def update_tray(state):
     if tray_icon is None:
         return
     try:
+        tray_icon.icon = load_icon(state)
         if state == "recording":
-            tray_icon.icon = make_icon_image(COLOR_REC, "S")
             tray_icon.title = "SOLetrando - Gravando..."
         elif state == "transcribing":
-            tray_icon.icon = make_icon_image(COLOR_TRANSCRIBING, "S")
             tray_icon.title = "SOLetrando - Transcrevendo... aguarde"
         else:
-            tray_icon.icon = load_tray_icon()
             tray_icon.title = f"SOLetrando - {config['hotkey_toggle'].title()} para gravar"
     except Exception as e:
         log(f"Erro ao atualizar tray: {e}")
@@ -822,7 +826,7 @@ def main():
 
     tray_icon = pystray.Icon(
         name="SOLetrando",
-        icon=load_tray_icon(),
+        icon=load_icon("idle"),
         title=f"SOLetrando - {config['hotkey_toggle'].title()} para gravar",
         menu=build_menu(),
     )
