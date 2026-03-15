@@ -3,7 +3,7 @@ setlocal
 cd /d "%~dp0"
 
 echo ============================================
-echo  Soletrando - Build completo
+echo  SOLetrando - Build completo
 echo ============================================
 
 set "PYEXE=.venv\Scripts\python.exe"
@@ -53,6 +53,6 @@ echo.
 echo ============================================
 echo  [OK] Build completo!
 echo  Executavel: dist\soletrando\soletrando.exe
-echo  Instalador: installer_output\SoletrandoSetup.exe
+echo  Instalador: installer_output\SOLetrandoSetup.exe
 echo ============================================
 pause

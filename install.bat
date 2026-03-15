@@ -5,7 +5,7 @@ cd /d "%~dp0"
 
 echo.
 echo ===================================================
-echo   Soletrando - Instalador
+echo   SOLetrando - Instalador
 echo ===================================================
 echo.
 
@@ -30,7 +30,7 @@ echo.
 for /f "delims=" %%i in ('powershell -NoProfile -Command "[Environment]::GetFolderPath('Desktop')"') do set "DESKTOP=%%i"
 
 :: 3. Criar atalho no Desktop
-powershell -NoProfile -Command "$ws = New-Object -ComObject WScript.Shell; $s = $ws.CreateShortcut('%DESKTOP%\Soletrando.lnk'); $s.TargetPath = '%EXE_PATH%'; $s.WorkingDirectory = '%INSTALL_DIR%'; $s.Description = 'Soletrando - Ditado por voz local'; $s.IconLocation = '%EXE_PATH%'; $s.Save()"
+powershell -NoProfile -Command "$ws = New-Object -ComObject WScript.Shell; $s = $ws.CreateShortcut('%DESKTOP%\SOLetrando.lnk'); $s.TargetPath = '%EXE_PATH%'; $s.WorkingDirectory = '%INSTALL_DIR%'; $s.Description = 'SOLetrando - Ditado por voz local'; $s.IconLocation = '%EXE_PATH%'; $s.Save()"
 if %ERRORLEVEL% equ 0 (
     echo   [OK] Atalho criado no Desktop
 ) else (
@@ -39,7 +39,7 @@ if %ERRORLEVEL% equ 0 (
 
 :: 4. Criar atalho no Startup
 set "STARTUP=%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup"
-powershell -NoProfile -Command "$ws = New-Object -ComObject WScript.Shell; $s = $ws.CreateShortcut('%STARTUP%\Soletrando.lnk'); $s.TargetPath = '%EXE_PATH%'; $s.WorkingDirectory = '%INSTALL_DIR%'; $s.Description = 'Soletrando - Ditado por voz local'; $s.IconLocation = '%EXE_PATH%'; $s.Save()"
+powershell -NoProfile -Command "$ws = New-Object -ComObject WScript.Shell; $s = $ws.CreateShortcut('%STARTUP%\SOLetrando.lnk'); $s.TargetPath = '%EXE_PATH%'; $s.WorkingDirectory = '%INSTALL_DIR%'; $s.Description = 'SOLetrando - Ditado por voz local'; $s.IconLocation = '%EXE_PATH%'; $s.Save()"
 if %ERRORLEVEL% equ 0 (
     echo   [OK] Atalho criado no Startup (inicializacao automatica)
 ) else (
@@ -51,12 +51,12 @@ echo   [OK] Instalacao concluida!
 echo.
 
 :: 5. Perguntar se quer iniciar agora
-set /p INICIAR="  Deseja iniciar o Soletrando agora? (s/n): "
+set /p INICIAR="  Deseja iniciar o SOLetrando agora? (s/n): "
 if /i "%INICIAR%"=="s" (
-    echo   Iniciando Soletrando...
+    echo   Iniciando SOLetrando...
     start "" "%EXE_PATH%"
 ) else (
-    echo   OK. Execute o Soletrando pelo atalho no Desktop quando quiser.
+    echo   OK. Execute o SOLetrando pelo atalho no Desktop quando quiser.
 )
 
 echo.

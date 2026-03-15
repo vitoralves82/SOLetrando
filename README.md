@@ -1,4 +1,4 @@
-# Soletrando 🎙️
+# SOLetrando 🎙️
 
 Ditado por voz gratuito, local e offline para Windows — utilizando [faster-whisper](https://github.com/SYSTRAN/faster-whisper) + CUDA/CPU.
 
@@ -182,7 +182,7 @@ Clique com o botão direito no ícone "S" na bandeja do sistema:
 - **Modelo** — escolher modelo Whisper (requer reiniciar)
 - **Abrir log** — abrir o arquivo de log
 - **Abrir pasta** — abrir a pasta de instalação
-- **Encerrar** — fechar o Soletrando
+- **Encerrar** — fechar o SOLetrando
 
 ---
 
@@ -411,7 +411,7 @@ Right-click the "S" icon in the system tray:
 - **Modelo** — choose Whisper model (requires restart)
 - **Abrir log** — open the log file
 - **Abrir pasta** — open the installation folder
-- **Encerrar** — quit Soletrando
+- **Encerrar** — quit SOLetrando
 
 ---
 

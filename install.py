@@ -11,7 +11,7 @@ import subprocess
 from pathlib import Path
 
 
-SHORTCUT_NAME = "Soletrando"
+SHORTCUT_NAME = "SOLetrando"
 
 
 def get_context():
@@ -80,7 +80,7 @@ def get_startup_path():
 def main():
     print()
     print("=" * 50)
-    print("  Instalador do Soletrando")
+    print("  Instalador do SOLetrando")
     print("=" * 50)
     print()
 
@@ -115,7 +115,7 @@ def main():
             working_dir=str(working_dir),
             arguments=arguments,
             icon_path=icon_path,
-            description="Soletrando - Ditado por voz local",
+            description="SOLetrando - Ditado por voz local",
         )
         print(f"  \u2713 Atalho criado no Desktop")
     except Exception as e:
@@ -131,7 +131,7 @@ def main():
             working_dir=str(working_dir),
             arguments=arguments,
             icon_path=icon_path,
-            description="Soletrando - Ditado por voz local",
+            description="SOLetrando - Ditado por voz local",
         )
         print(f"  \u2713 Atalho criado no Startup (inicializacao automatica)")
     except Exception as e:
@@ -147,18 +147,18 @@ def main():
 
     # 3. Perguntar se deseja iniciar
     try:
-        resp = input("  Deseja iniciar o Soletrando agora? (s/n): ").strip().lower()
+        resp = input("  Deseja iniciar o SOLetrando agora? (s/n): ").strip().lower()
     except (EOFError, KeyboardInterrupt):
         resp = "n"
 
     if resp in ("s", "sim", "y", "yes"):
-        print("  Iniciando Soletrando...")
+        print("  Iniciando SOLetrando...")
         if mode == "exe":
             subprocess.Popen([str(target)], cwd=str(working_dir))
         else:
             subprocess.Popen([str(target), str(soletrando_py)], cwd=str(working_dir))
     else:
-        print("  OK. Execute o Soletrando pelo atalho no Desktop quando quiser.")
+        print("  OK. Execute o SOLetrando pelo atalho no Desktop quando quiser.")
 
     print()
 
