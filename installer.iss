@@ -24,7 +24,7 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "Criar atalho na Area de Trabalho"; GroupDescription: "Atalhos:"
-Name: "startupicon"; Description: "Iniciar com o Windows automaticamente"; GroupDescription: "Atalhos:"
+Name: "startupicon"; Description: "Iniciar com o Windows automaticamente"; GroupDescription: "Atalhos:"; Flags: checkedonce
 
 [Files]
 ; Todo o conteudo da pasta dist\soletrando\
