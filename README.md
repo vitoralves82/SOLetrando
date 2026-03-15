@@ -48,11 +48,19 @@ Os atalhos podem ser alterados pelo menu de clique direito no ícone da bandeja.
 
 ## Instalação
 
-### Opção A: Rodar a partir do código-fonte
+### Opção A: Baixar o executável (recomendado)
+
+1. Vá em [GitHub Releases](https://github.com/vitoralves82/SOLetrando/releases) e baixe o `.zip` da última versão
+2. Extraia o conteúdo do `.zip`
+3. Execute `soletrando.exe`
+
+Sem necessidade de Python, Git ou terminal.
+
+### Opção B: Rodar a partir do código-fonte
 
 ```powershell
-git clone https://github.com/YOUR_USER/soletrando.git
-cd soletrando
+git clone https://github.com/vitoralves82/SOLetrando.git
+cd SOLetrando
 python -m venv .venv
 .\.venv\Scripts\activate
 ```
@@ -81,9 +89,9 @@ Modo silencioso (sem janela de console — recomendado):
 .\.venv\Scripts\pythonw.exe soletrando.py
 ```
 
-### Opção B: Gerar executável .exe
+### Opção C: Gerar executável .exe a partir do código-fonte
 
-Após instalar a partir do código-fonte, execute:
+Após instalar a partir do código-fonte (Opção B), execute:
 
 ```powershell
 build.bat
@@ -259,11 +267,19 @@ Hotkeys can be changed via the tray icon right-click menu. Changes are saved aut
 
 ## Installation
 
-### Option A: Run from source
+### Option A: Download the executable (recommended)
+
+1. Go to [GitHub Releases](https://github.com/vitoralves82/SOLetrando/releases) and download the `.zip` from the latest version
+2. Extract the `.zip` contents
+3. Run `soletrando.exe`
+
+No Python, Git, or terminal needed.
+
+### Option B: Run from source
 
 ```powershell
-git clone https://github.com/YOUR_USER/soletrando.git
-cd soletrando
+git clone https://github.com/vitoralves82/SOLetrando.git
+cd SOLetrando
 python -m venv .venv
 .\.venv\Scripts\activate
 ```
@@ -292,9 +308,9 @@ Headless mode (no console window — recommended):
 .\.venv\Scripts\pythonw.exe soletrando.py
 ```
 
-### Option B: Build standalone .exe
+### Option C: Build standalone .exe from source
 
-After installing from source, run:
+After installing from source (Option B), run:
 
 ```powershell
 build.bat
