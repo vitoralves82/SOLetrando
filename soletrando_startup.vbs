@@ -1,4 +1,4 @@
-' Soletrando - Auto-start silencioso
+' SOLetrando - Auto-start silencioso
 ' Coloque este arquivo em:
 '   %APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\
 '

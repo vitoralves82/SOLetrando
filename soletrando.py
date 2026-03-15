@@ -1,5 +1,5 @@
 """
-Soletrando - Ditado por voz local
+SOLetrando - Ditado por voz local
 faster-whisper + CUDA/CPU | Alternativa ao Wispr Flow
 
 Atalhos configuraveis via icone na bandeja do sistema.
@@ -37,7 +37,7 @@ def show_splash():
         _splash.configure(bg="#1a1a2e")
         lbl = tk.Label(
             _splash,
-            text="Soletrando\nCarregando modelo...",
+            text="SOLetrando\nCarregando modelo...",
             font=("Segoe UI", 14),
             fg="white",
             bg="#1a1a2e",
@@ -174,7 +174,7 @@ config = load_config()
 # =====================================================================
 # ARGUMENTOS (override da config)
 # =====================================================================
-parser = argparse.ArgumentParser(description="Soletrando - Ditado por voz local")
+parser = argparse.ArgumentParser(description="SOLetrando - Ditado por voz local")
 parser.add_argument("--model", default=None, help="Modelo Whisper: tiny, base, small, medium (padrao), large-v3")
 parser.add_argument("--language", default=None, help="Idioma: pt (padrao), en, es, fr, de... ou vazio para deteccao automatica")
 args = parser.parse_args()
@@ -187,7 +187,7 @@ if args.model:
 if args.language:
     config["language"] = args.language
 
-log(f"Iniciando Soletrando - modelo={config['model']}, idioma={config['language']}")
+log(f"Iniciando SOLetrando - modelo={config['model']}, idioma={config['language']}")
 
 # =====================================================================
 # IMPORTS PESADOS
@@ -260,7 +260,7 @@ def load_model_with_progress(model_name, device, compute_type):
 
     # Janela tkinter
     root = tk.Tk()
-    root.title("Soletrando")
+    root.title("SOLetrando")
     root.geometry("420x150")
     root.resizable(False, False)
     root.attributes("-topmost", True)
@@ -325,7 +325,6 @@ atexit.register(cleanup_lock)
 ensure_single_instance()
 model = load_model_with_progress(config["model"], device, compute_type)
 log("Modelo carregado com sucesso")
-close_splash()
 
 # =====================================================================
 # ESTADO GLOBAL
@@ -378,13 +377,13 @@ def update_tray(state):
     try:
         if state == "recording":
             tray_icon.icon = make_icon_image(COLOR_REC, "S")
-            tray_icon.title = "Soletrando - Gravando..."
+            tray_icon.title = "SOLetrando - Gravando..."
         elif state == "transcribing":
             tray_icon.icon = make_icon_image(COLOR_TRANSCRIBING, "S")
-            tray_icon.title = "Soletrando - Transcrevendo..."
+            tray_icon.title = "SOLetrando - Transcrevendo..."
         else:
             tray_icon.icon = make_icon_image(COLOR_IDLE, "S")
-            tray_icon.title = f"Soletrando - {config['hotkey_toggle'].title()} para gravar"
+            tray_icon.title = f"SOLetrando - {config['hotkey_toggle'].title()} para gravar"
     except Exception as e:
         log(f"Erro ao atualizar tray: {e}")
 
@@ -640,7 +639,7 @@ def toggle():
 def shutdown():
     global is_recording, stream, tray_icon
 
-    log("Encerrando Soletrando")
+    log("Encerrando SOLetrando")
 
     try:
         keyboard.unhook_all_hotkeys()
@@ -719,7 +718,7 @@ def build_menu():
     ]
 
     return pystray.Menu(
-        pystray.MenuItem(f"Soletrando ({config['model']})", None, enabled=False),
+        pystray.MenuItem(f"SOLetrando ({config['model']})", None, enabled=False),
         pystray.Menu.SEPARATOR,
         pystray.MenuItem("Tecla de gravar", pystray.Menu(*toggle_items)),
         pystray.MenuItem("Tecla de encerrar", pystray.Menu(*quit_items)),
@@ -733,7 +732,7 @@ def build_menu():
         pystray.MenuItem("Abrir log", on_open_log),
         pystray.MenuItem("Abrir pasta", on_open_folder),
         pystray.Menu.SEPARATOR,
-        pystray.MenuItem("Desinstalar Soletrando...", on_uninstall),
+        pystray.MenuItem("Desinstalar SOLetrando...", on_uninstall),
         pystray.Menu.SEPARATOR,
         pystray.MenuItem("Encerrar", on_tray_quit),
     )
@@ -760,10 +759,10 @@ def on_open_folder(icon, item):
 
 
 def on_uninstall(icon, item):
-    """Abre a tela de desinstalacao do Windows para o Soletrando."""
+    """Abre a tela de desinstalacao do Windows para o SOLetrando."""
     try:
         import subprocess
-        # Abre Configuracoes > Aplicativos direto na busca do Soletrando
+        # Abre Configuracoes > Aplicativos direto na busca do SOLetrando
         subprocess.Popen(["cmd", "/c", "start", "ms-settings:appsfeatures"])
         log("Tela de desinstalacao aberta")
     except Exception as e:
@@ -777,7 +776,7 @@ def main():
     global tray_icon
 
     log("=" * 55)
-    log("Soletrando ativo")
+    log("SOLetrando ativo")
     log(f"  Gravar/Parar  = {config['hotkey_toggle']}")
     log(f"  Encerrar      = {config['hotkey_quit']}")
     log(f"  Modelo        = {config['model']}")
@@ -787,12 +786,13 @@ def main():
     register_hotkeys()
 
     tray_icon = pystray.Icon(
-        name="Soletrando",
+        name="SOLetrando",
         icon=make_icon_image(COLOR_IDLE, "S"),
-        title=f"Soletrando - {config['hotkey_toggle'].title()} para gravar",
+        title=f"SOLetrando - {config['hotkey_toggle'].title()} para gravar",
         menu=build_menu(),
     )
 
+    close_splash()
     log("Tray icon ativo")
     tray_icon.run()
 

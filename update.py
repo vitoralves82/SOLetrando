@@ -1,5 +1,5 @@
 """
-Soletrando - Atualizador
+SOLetrando - Atualizador
 Consulta o GitHub Releases e baixa a versao mais recente.
 """
 
@@ -109,7 +109,7 @@ def download_and_extract(zip_url, dest_dir):
 
 def main():
     print("=" * 50)
-    print("  Soletrando - Atualizador")
+    print("  SOLetrando - Atualizador")
     print("=" * 50)
     print()
 
@@ -153,7 +153,7 @@ def main():
         (BASE_DIR / VERSION_FILE).write_text(remote_ver, encoding="utf-8")
         print()
         print("  [OK] Atualizado para a versao", remote_ver)
-        print("  Reinicie o Soletrando para aplicar.")
+        print("  Reinicie o SOLetrando para aplicar.")
     else:
         print("  [ERRO] Falha na atualizacao.")
 
