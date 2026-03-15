@@ -30,7 +30,7 @@ echo.
 for /f "delims=" %%i in ('powershell -NoProfile -Command "[Environment]::GetFolderPath('Desktop')"') do set "DESKTOP=%%i"
 
 :: 3. Criar atalho no Desktop
-powershell -NoProfile -Command "$ws = New-Object -ComObject WScript.Shell; $s = $ws.CreateShortcut('%DESKTOP%\SOLetrando.lnk'); $s.TargetPath = '%EXE_PATH%'; $s.WorkingDirectory = '%INSTALL_DIR%'; $s.Description = 'SOLetrando - Ditado por voz local'; $s.IconLocation = '%EXE_PATH%'; $s.Save()"
+powershell -NoProfile -Command "$ws = New-Object -ComObject WScript.Shell; $s = $ws.CreateShortcut('%DESKTOP%\SOLetrando.lnk'); $s.TargetPath = '%EXE_PATH%'; $s.WorkingDirectory = '%INSTALL_DIR%'; $s.Description = 'SOLetrando - Ditado por voz local'; $s.IconLocation = '%INSTALL_DIR%\soletrando.ico'; $s.Save()"
 if %ERRORLEVEL% equ 0 (
     echo   [OK] Atalho criado no Desktop
 ) else (
@@ -39,7 +39,7 @@ if %ERRORLEVEL% equ 0 (
 
 :: 4. Criar atalho no Startup
 set "STARTUP=%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup"
-powershell -NoProfile -Command "$ws = New-Object -ComObject WScript.Shell; $s = $ws.CreateShortcut('%STARTUP%\SOLetrando.lnk'); $s.TargetPath = '%EXE_PATH%'; $s.WorkingDirectory = '%INSTALL_DIR%'; $s.Description = 'SOLetrando - Ditado por voz local'; $s.IconLocation = '%EXE_PATH%'; $s.Save()"
+powershell -NoProfile -Command "$ws = New-Object -ComObject WScript.Shell; $s = $ws.CreateShortcut('%STARTUP%\SOLetrando.lnk'); $s.TargetPath = '%EXE_PATH%'; $s.WorkingDirectory = '%INSTALL_DIR%'; $s.Description = 'SOLetrando - Ditado por voz local'; $s.IconLocation = '%INSTALL_DIR%\soletrando.ico'; $s.Save()"
 if %ERRORLEVEL% equ 0 (
     echo   [OK] Atalho criado no Startup (inicializacao automatica)
 ) else (
