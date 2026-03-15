@@ -78,7 +78,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon='soletrando.ico' if os.path.exists('soletrando.ico') else ('assets\\icon.ico' if os.path.exists('assets\\icon.ico') else 'NONE'),
+    icon='soletrando.ico' if os.path.exists('soletrando.ico') else 'NONE',
 )
 
 coll = COLLECT(
