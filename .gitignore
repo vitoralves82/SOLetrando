@@ -6,4 +6,5 @@ soletrando.log
 soletrando_config.json
 build/
 dist/
-*.spec
+assets/icon.ico
+installer_output/

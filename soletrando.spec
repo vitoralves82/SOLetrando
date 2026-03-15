@@ -1,4 +1,5 @@
 # -*- mode: python ; coding: utf-8 -*-
+import os
 from PyInstaller.utils.hooks import collect_all
 
 # Coleta apenas o necessario para faster-whisper / ctranslate2
@@ -17,6 +18,8 @@ hiddenimports = [
     'PIL.ImageDraw',
     'PIL.ImageFont',
     'numpy',
+    'huggingface_hub',
+    'tkinter',
 ] + fw_hidden + ct_hidden
 
 datas = fw_datas + ct_datas
@@ -69,7 +72,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon='NONE',
+    icon='assets\\icon.ico' if os.path.exists('assets\\icon.ico') else 'NONE',
 )
 
 coll = COLLECT(

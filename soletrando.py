@@ -14,6 +14,7 @@ import threading
 import os
 import json
 import tempfile
+import atexit
 from pathlib import Path
 from datetime import datetime
 
@@ -22,14 +23,21 @@ warnings.filterwarnings("ignore")
 # =====================================================================
 # PATHS
 # =====================================================================
+# Pasta de instalacao (onde esta o .exe)
 if getattr(sys, "frozen", False):
-    # Rodando como .exe (PyInstaller)
-    BASE_DIR = Path(sys.executable).parent
+    INSTALL_DIR = Path(sys.executable).parent
 else:
-    BASE_DIR = Path(__file__).parent
+    INSTALL_DIR = Path(__file__).parent
 
-LOG_PATH = BASE_DIR / "soletrando.log"
-CONFIG_PATH = BASE_DIR / "soletrando_config.json"
+# Pasta de dados do usuario
+DATA_DIR = Path(os.environ.get("LOCALAPPDATA", INSTALL_DIR)) / "Soletrando"
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+MODELS_DIR = DATA_DIR / "models"
+MODELS_DIR.mkdir(parents=True, exist_ok=True)
+
+LOG_PATH = DATA_DIR / "soletrando.log"
+CONFIG_PATH = DATA_DIR / "soletrando_config.json"
 HAS_CONSOLE = sys.stdout is not None and hasattr(sys.stdout, "write")
 
 
@@ -56,6 +64,7 @@ DEFAULT_CONFIG = {
     "hotkey_quit": "ctrl+shift+q",
     "model": "medium",
     "language": "pt",
+    "beep_enabled": False,
 }
 
 # Opcoes de hotkey disponiveis no menu
@@ -131,11 +140,15 @@ from PIL import Image, ImageDraw, ImageFont
 import pystray
 
 # =====================================================================
-# CARREGAR MODELO
+# DETECCAO DE GPU (sem torch)
 # =====================================================================
-import torch
+try:
+    import ctranslate2
+    has_cuda = ctranslate2.get_cuda_device_count() > 0
+except Exception:
+    has_cuda = False
 
-if torch.cuda.is_available():
+if has_cuda:
     device = "cuda"
     compute_type = "float16"
     log(f"Carregando faster-whisper '{config['model']}' na GPU (float16)...")
@@ -144,7 +157,82 @@ else:
     compute_type = "int8"
     log(f"GPU nao disponivel. Carregando faster-whisper '{config['model']}' na CPU (int8)...")
 
-model = WhisperModel(config["model"], device=device, compute_type=compute_type)
+# =====================================================================
+# DOWNLOAD/CARREGAMENTO DO MODELO COM PROGRESSO
+# =====================================================================
+import tkinter as tk
+from tkinter import ttk
+from huggingface_hub import scan_cache_dir
+
+
+def is_model_cached(model_name):
+    """Verifica se o modelo ja esta no cache do huggingface_hub."""
+    try:
+        full_name = f"Systran/faster-whisper-{model_name}"
+        cache_info = scan_cache_dir()
+        for repo in cache_info.repos:
+            if repo.repo_id == full_name:
+                return True
+    except Exception:
+        pass
+    return False
+
+
+def load_model_with_progress(model_name, device, compute_type):
+    """Carrega modelo, mostrando janela de progresso se precisar baixar."""
+    if is_model_cached(model_name):
+        log(f"Modelo '{model_name}' encontrado em cache")
+        return WhisperModel(model_name, device=device, compute_type=compute_type)
+
+    # Modelo nao esta em cache — mostrar janela de download
+    log(f"Modelo '{model_name}' nao encontrado, iniciando download...")
+
+    result = {"model": None, "error": None}
+
+    def download_thread():
+        try:
+            result["model"] = WhisperModel(model_name, device=device, compute_type=compute_type)
+        except Exception as e:
+            result["error"] = e
+
+    # Janela tkinter
+    root = tk.Tk()
+    root.title("Soletrando")
+    root.geometry("420x150")
+    root.resizable(False, False)
+    root.attributes("-topmost", True)
+
+    frame = tk.Frame(root, padx=20, pady=20)
+    frame.pack(fill="both", expand=True)
+
+    label = tk.Label(frame, text=f"Baixando modelo '{model_name}'...\nIsso acontece apenas na primeira vez.",
+                     justify="center", font=("Segoe UI", 10))
+    label.pack(pady=(0, 15))
+
+    progress = ttk.Progressbar(frame, mode="indeterminate", length=350)
+    progress.pack()
+    progress.start(15)
+
+    thread = threading.Thread(target=download_thread, daemon=True)
+    thread.start()
+
+    def check_thread():
+        if thread.is_alive():
+            root.after(200, check_thread)
+        else:
+            root.destroy()
+
+    root.after(200, check_thread)
+    root.protocol("WM_DELETE_WINDOW", lambda: None)  # Impedir fechar
+    root.mainloop()
+
+    if result["error"]:
+        raise result["error"]
+
+    return result["model"]
+
+
+model = load_model_with_progress(config["model"], device, compute_type)
 log("Modelo carregado com sucesso")
 
 # =====================================================================
@@ -292,6 +380,9 @@ def cleanup_lock():
         pass
 
 
+atexit.register(cleanup_lock)
+
+
 # =====================================================================
 # BEEPS
 # =====================================================================
@@ -309,6 +400,12 @@ def beep_stop():
         winsound.Beep(450, 120)
     except Exception:
         pass
+
+
+def toggle_beep(icon, item):
+    config["beep_enabled"] = not config["beep_enabled"]
+    save_config(config)
+    log(f"Bip sonoro {'ativado' if config['beep_enabled'] else 'desativado'}")
 
 
 # =====================================================================
@@ -387,6 +484,13 @@ def stop_and_transcribe():
         return
 
     peak = np.max(np.abs(audio_data)) if len(audio_data) else 0
+
+    # Protecao contra audio silencioso
+    if peak < 0.01:
+        log("Audio muito silencioso, ignorando")
+        update_tray("idle")
+        return
+
     if peak > 0:
         audio_data = audio_data / peak
 
@@ -434,11 +538,13 @@ def toggle():
 
     with toggle_lock:
         if not is_recording:
-            #beep_start()
+            if config["beep_enabled"]:
+                beep_start()
             start_recording()
         else:
             stop_and_transcribe()
-            #beep_stop()
+            if config["beep_enabled"]:
+                beep_stop()
 
 
 # =====================================================================
@@ -471,7 +577,7 @@ def shutdown():
         except Exception:
             pass
 
-    os._exit(0)
+    sys.exit(0)
 
 
 def on_tray_quit(icon, item):
@@ -532,6 +638,11 @@ def build_menu():
         pystray.MenuItem("Tecla de encerrar", pystray.Menu(*quit_items)),
         pystray.MenuItem("Modelo (requer restart)", pystray.Menu(*model_items)),
         pystray.Menu.SEPARATOR,
+        pystray.MenuItem(
+            "Bip sonoro",
+            toggle_beep,
+            checked=lambda item: config["beep_enabled"],
+        ),
         pystray.MenuItem("Abrir log", on_open_log),
         pystray.MenuItem("Abrir pasta", on_open_folder),
         pystray.Menu.SEPARATOR,
@@ -554,7 +665,7 @@ def on_open_log(icon, item):
 
 def on_open_folder(icon, item):
     try:
-        os.startfile(str(BASE_DIR))
+        os.startfile(str(DATA_DIR))
     except Exception:
         pass
 
@@ -572,6 +683,7 @@ def main():
     log(f"  Gravar/Parar  = {config['hotkey_toggle']}")
     log(f"  Encerrar      = {config['hotkey_quit']}")
     log(f"  Modelo        = {config['model']}")
+    log(f"  Dados         = {DATA_DIR}")
     log("=" * 55)
 
     register_hotkeys()

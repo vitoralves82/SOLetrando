@@ -3,45 +3,56 @@ setlocal
 cd /d "%~dp0"
 
 echo ============================================
-echo  Soletrando - Build do executavel (.exe)
+echo  Soletrando - Build completo
 echo ============================================
-echo.
 
 set "PYEXE=.venv\Scripts\python.exe"
 if not exist "%PYEXE%" set "PYEXE=python"
 
-echo [*] Usando Python: %PYEXE%
-
-if not exist "soletrando.py" (
-  echo [ERRO] soletrando.py nao encontrado.
-  pause
-  exit /b 1
+echo.
+echo [1/3] Gerando icone...
+if not exist "assets" mkdir assets
+"%PYEXE%" generate_icon.py
+if errorlevel 1 (
+  echo [AVISO] Falha ao gerar icone, continuando sem icone personalizado...
 )
 
-if not exist "soletrando.spec" (
-  echo [ERRO] soletrando.spec nao encontrado.
-  pause
-  exit /b 1
-)
-
-echo [*] Limpando builds anteriores...
+echo.
+echo [2/3] Gerando executavel via PyInstaller...
 if exist build rmdir /s /q build
 if exist dist rmdir /s /q dist
-
-echo [*] Gerando via soletrando.spec...
 "%PYEXE%" -m PyInstaller --noconfirm --clean soletrando.spec
 if errorlevel 1 (
+  echo [ERRO] Build do PyInstaller falhou!
+  pause
+  exit /b 1
+)
+
+echo.
+echo [3/3] Gerando instalador via Inno Setup...
+where iscc >nul 2>&1
+if errorlevel 1 (
+  echo [AVISO] Inno Setup (iscc) nao encontrado no PATH.
+  echo Instale em: https://jrsoftware.org/isdl.php
+  echo Ou compile manualmente: abra installer.iss no Inno Setup.
   echo.
-  echo ============================================
-  echo  [ERRO] Build falhou! Verifique os logs acima.
-  echo ============================================
+  echo O executavel standalone esta em: dist\soletrando\soletrando.exe
+  pause
+  exit /b 0
+)
+
+if not exist "installer_output" mkdir installer_output
+iscc installer.iss
+if errorlevel 1 (
+  echo [ERRO] Inno Setup falhou!
   pause
   exit /b 1
 )
 
 echo.
 echo ============================================
-echo  [OK] Build concluido.
-echo  Saida: dist\soletrando\soletrando.exe
+echo  [OK] Build completo!
+echo  Executavel: dist\soletrando\soletrando.exe
+echo  Instalador: installer_output\SoletrandoSetup.exe
 echo ============================================
 pause

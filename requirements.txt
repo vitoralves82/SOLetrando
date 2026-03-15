@@ -5,3 +5,4 @@ keyboard
 pystray
 Pillow
 pyinstaller
+huggingface_hub
