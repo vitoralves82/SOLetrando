@@ -295,6 +295,33 @@ def load_model_with_progress(model_name, device, compute_type):
     return result["model"]
 
 
+# =====================================================================
+# SINGLE INSTANCE
+# =====================================================================
+LOCK_FILE = Path(tempfile.gettempdir()) / "soletrando.lock"
+
+
+def ensure_single_instance():
+    if LOCK_FILE.exists():
+        try:
+            old_pid = int(LOCK_FILE.read_text(encoding="utf-8").strip())
+            os.kill(old_pid, 0)
+            log(f"Ja existe instancia rodando (PID={old_pid}). Encerrando.")
+            sys.exit(0)
+        except Exception:
+            pass
+    LOCK_FILE.write_text(str(os.getpid()), encoding="utf-8")
+
+
+def cleanup_lock():
+    try:
+        LOCK_FILE.unlink(missing_ok=True)
+    except Exception:
+        pass
+
+
+atexit.register(cleanup_lock)
+
 ensure_single_instance()
 model = load_model_with_progress(config["model"], device, compute_type)
 log("Modelo carregado com sucesso")
@@ -305,7 +332,6 @@ close_splash()
 # =====================================================================
 SAMPLE_RATE = 16000
 MIN_DURATION_SECONDS = 0.5
-LOCK_FILE = Path(tempfile.gettempdir()) / "soletrando.lock"
 
 is_recording = False
 is_transcribing = False
@@ -422,31 +448,6 @@ def is_current_model(model_key):
     def check(item):
         return config["model"] == model_key
     return check
-
-
-# =====================================================================
-# SINGLE INSTANCE
-# =====================================================================
-def ensure_single_instance():
-    if LOCK_FILE.exists():
-        try:
-            old_pid = int(LOCK_FILE.read_text(encoding="utf-8").strip())
-            os.kill(old_pid, 0)
-            log(f"Ja existe instancia rodando (PID={old_pid}). Encerrando.")
-            sys.exit(0)
-        except Exception:
-            pass
-    LOCK_FILE.write_text(str(os.getpid()), encoding="utf-8")
-
-
-def cleanup_lock():
-    try:
-        LOCK_FILE.unlink(missing_ok=True)
-    except Exception:
-        pass
-
-
-atexit.register(cleanup_lock)
 
 
 # =====================================================================
