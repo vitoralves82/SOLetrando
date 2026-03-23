@@ -426,6 +426,16 @@ def update_tray(state):
 # =====================================================================
 # HOTKEY MANAGEMENT
 # =====================================================================
+def hotkey_watchdog():
+    """Re-registra hotkeys periodicamente para evitar perda do hook do Windows."""
+    while True:
+        time.sleep(30)
+        try:
+            register_hotkeys()
+        except Exception as e:
+            log(f"Watchdog: erro ao re-registrar hotkeys: {e}")
+
+
 def register_hotkeys():
     global current_hotkey_toggle, current_hotkey_quit
 
@@ -671,9 +681,11 @@ def stop_and_transcribe():
 # =====================================================================
 def toggle():
     global last_toggle_time
+    log("Toggle acionado")
 
     now = time.time()
     if (now - last_toggle_time) < DEBOUNCE_SECONDS:
+        log("Toggle ignorado (debounce)")
         return
     last_toggle_time = now
 
@@ -723,6 +735,33 @@ def shutdown():
             pass
 
     sys.exit(0)
+
+
+def on_restart(icon, item):
+    """Reinicia hotkeys e estado sem fechar o programa."""
+    global is_recording, stream
+    log("Reiniciando SOLetrando...")
+
+    # Para gravacao se ativa
+    if is_recording:
+        is_recording = False
+        try:
+            if stream is not None:
+                stream.stop()
+                stream.close()
+                stream = None
+        except Exception:
+            pass
+
+    # Re-registra hotkeys
+    try:
+        keyboard.unhook_all_hotkeys()
+    except Exception:
+        pass
+    register_hotkeys()
+
+    update_tray("idle")
+    log("SOLetrando reiniciado com sucesso")
 
 
 def on_tray_quit(icon, item):
@@ -793,6 +832,8 @@ def build_menu():
         pystray.Menu.SEPARATOR,
         pystray.MenuItem("Desinstalar SOLetrando...", on_uninstall),
         pystray.Menu.SEPARATOR,
+        pystray.MenuItem("Reiniciar", on_restart),
+        pystray.Menu.SEPARATOR,
         pystray.MenuItem("Encerrar", on_tray_quit),
     )
 
@@ -843,6 +884,10 @@ def main():
     log("=" * 55)
 
     register_hotkeys()
+
+    watchdog_thread = threading.Thread(target=hotkey_watchdog, daemon=True)
+    watchdog_thread.start()
+    log("Watchdog de hotkeys ativo (30s)")
 
     tray_icon = pystray.Icon(
         name="SOLetrando",
