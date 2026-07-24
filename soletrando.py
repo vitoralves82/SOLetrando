@@ -351,6 +351,9 @@ log("Modelo carregado com sucesso")
 # =====================================================================
 SAMPLE_RATE = 16000
 MIN_DURATION_SECONDS = 0.5
+# Limite de seguranca: para automaticamente uma gravacao esquecida,
+# evitando consumo ilimitado de memoria e estado travado.
+MAX_RECORDING_SECONDS = 300
 
 is_recording = False
 is_transcribing = False
@@ -362,6 +365,7 @@ DEBOUNCE_SECONDS = 0.35
 tray_icon = None
 current_hotkey_toggle = None
 current_hotkey_quit = None
+recording_session = 0  # identifica cada gravacao (usado pelo watchdog)
 
 
 # =====================================================================
@@ -518,10 +522,36 @@ def audio_callback(indata, frames, time_info, status):
         audio_frames.append(indata.copy())
 
 
+def _close_stream():
+    """Para e fecha o stream de audio atual, se existir (sempre seguro)."""
+    global stream
+    if stream is not None:
+        try:
+            stream.stop()
+        except Exception as e:
+            log(f"Erro ao parar stream: {e}")
+        try:
+            stream.close()
+        except Exception as e:
+            log(f"Erro ao fechar stream: {e}")
+        stream = None
+
+
+def _watchdog_stop(session):
+    """Auto-para uma gravacao que passou do tempo maximo (por sessao)."""
+    if is_recording and session == recording_session:
+        log("Gravacao atingiu o tempo maximo, parando automaticamente")
+        threading.Thread(target=stop_and_transcribe, daemon=True).start()
+
+
 def start_recording():
-    global is_recording, audio_frames, stream
+    global is_recording, audio_frames, stream, recording_session
     if is_recording:
         return
+
+    # Fecha qualquer stream residual de uma sessao anterior (evita vazamento)
+    _close_stream()
+
     audio_frames = []
     try:
         stream = sd.InputStream(
@@ -534,14 +564,21 @@ def start_recording():
         stream.start()
     except Exception as e:
         is_recording = False
-        stream = None
+        _close_stream()
         log(f"Falha ao iniciar gravacao: {e}")
         update_tray("idle")
         return
 
     is_recording = True
+    recording_session += 1
+    session = recording_session
     log("REC iniciado")
     update_tray("recording")
+
+    # Watchdog: para automaticamente se a gravacao for esquecida
+    watchdog = threading.Timer(MAX_RECORDING_SECONDS, lambda: _watchdog_stop(session))
+    watchdog.daemon = True
+    watchdog.start()
 
 
 # =====================================================================
@@ -583,87 +620,79 @@ def insert_text(text):
 # TRANSCREVER
 # =====================================================================
 def stop_and_transcribe():
-    global is_recording, stream, audio_frames, is_transcribing
+    global is_recording, audio_frames, is_transcribing
 
     if not is_recording:
         return
 
     is_transcribing = True
-
     is_recording = False
 
+    # try/finally garante que is_transcribing SEMPRE volte a False e o tray
+    # volte para idle, mesmo diante de uma excecao inesperada. Sem isso, um
+    # erro nao previsto deixava a flag presa em True e o app parava de
+    # responder a qualquer atalho ate ser reiniciado.
     try:
-        if stream is not None:
-            stream.stop()
-            stream.close()
-            stream = None
-    except Exception as e:
-        log(f"Erro ao fechar stream: {e}")
-        stream = None
+        _close_stream()
 
-    if not audio_frames:
-        log("Nenhum audio capturado")
-        update_tray("idle")
-        is_transcribing = False
-        return
+        # Copia local e limpa a lista global (o callback ja nao appenda pois
+        # is_recording == False), evitando corrida durante o concatenate.
+        frames = audio_frames
+        audio_frames = []
 
-    update_tray("transcribing")
-    log("Transcrevendo...")
+        if not frames:
+            log("Nenhum audio capturado")
+            return
 
-    try:
-        audio_data = np.concatenate(audio_frames, axis=0).flatten().astype(np.float32)
-    except Exception as e:
-        log(f"Erro ao consolidar audio: {e}")
-        update_tray("idle")
-        is_transcribing = False
-        return
+        update_tray("transcribing")
+        log("Transcrevendo...")
 
-    peak = np.max(np.abs(audio_data)) if len(audio_data) else 0
+        try:
+            audio_data = np.concatenate(frames, axis=0).flatten().astype(np.float32)
+        except Exception as e:
+            log(f"Erro ao consolidar audio: {e}")
+            return
 
-    # Protecao contra audio silencioso
-    if peak < 0.01:
-        log("Audio muito silencioso, ignorando")
-        update_tray("idle")
-        is_transcribing = False
-        return
+        peak = float(np.max(np.abs(audio_data))) if len(audio_data) else 0.0
 
-    if peak > 0:
+        # Protecao contra audio silencioso
+        if peak < 0.01:
+            log("Audio muito silencioso, ignorando")
+            return
+
         audio_data = audio_data / peak
 
-    duration = len(audio_data) / SAMPLE_RATE
-    log(f"Audio: {duration:.1f}s")
+        duration = len(audio_data) / SAMPLE_RATE
+        log(f"Audio: {duration:.1f}s")
 
-    if duration < MIN_DURATION_SECONDS:
-        log("Audio muito curto, ignorando")
-        update_tray("idle")
-        is_transcribing = False
-        return
+        if duration < MIN_DURATION_SECONDS:
+            log("Audio muito curto, ignorando")
+            return
 
-    try:
-        segments, info = model.transcribe(
-            audio_data,
-            language=config["language"] if config["language"] else None,
-            beam_size=5,
-            vad_filter=True,
-        )
-        text = " ".join(seg.text.strip() for seg in segments).strip()
+        try:
+            segments, info = model.transcribe(
+                audio_data,
+                language=config["language"] if config["language"] else None,
+                beam_size=5,
+                vad_filter=True,
+            )
+            text = " ".join(seg.text.strip() for seg in segments).strip()
+        except Exception as e:
+            log(f"Erro na transcricao: {e}")
+            return
+
+        if not text:
+            log("Nenhuma fala detectada")
+            return
+
+        log(f"Texto: {text}")
+        copy_to_clipboard(text)
+        insert_text(text)
     except Exception as e:
-        log(f"Erro na transcricao: {e}")
-        update_tray("idle")
+        log(f"Erro inesperado na transcricao: {e}")
+    finally:
         is_transcribing = False
-        return
-
-    if not text:
-        log("Nenhuma fala detectada")
         update_tray("idle")
-        is_transcribing = False
-        return
-
-    log(f"Texto: {text}")
-    copy_to_clipboard(text)
-    insert_text(text)
-    update_tray("idle")
-    is_transcribing = False
 
 
 # =====================================================================
@@ -672,31 +701,36 @@ def stop_and_transcribe():
 def toggle():
     global last_toggle_time
 
-    now = time.time()
-    if (now - last_toggle_time) < DEBOUNCE_SECONDS:
-        return
-    last_toggle_time = now
+    # Roda na thread do 'keyboard'; um erro nao tratado aqui poderia derrubar
+    # o handler silenciosamente. Envolvemos tudo para registrar no log.
+    try:
+        now = time.time()
+        if (now - last_toggle_time) < DEBOUNCE_SECONDS:
+            return
+        last_toggle_time = now
 
-    if is_transcribing:
-        log("Toggle ignorado - transcricao em andamento")
-        return
+        if is_transcribing:
+            log("Toggle ignorado - transcricao em andamento")
+            return
 
-    with toggle_lock:
-        if not is_recording:
-            if config["beep_enabled"]:
-                beep_start()
-            start_recording()
-        else:
-            if config["beep_enabled"]:
-                beep_stop()
-            threading.Thread(target=stop_and_transcribe, daemon=True).start()
+        with toggle_lock:
+            if not is_recording:
+                if config["beep_enabled"]:
+                    beep_start()
+                start_recording()
+            else:
+                if config["beep_enabled"]:
+                    beep_stop()
+                threading.Thread(target=stop_and_transcribe, daemon=True).start()
+    except Exception as e:
+        log(f"Erro no toggle: {e}")
 
 
 # =====================================================================
 # SHUTDOWN
 # =====================================================================
 def shutdown():
-    global is_recording, stream, tray_icon
+    global is_recording, tray_icon
 
     log("Encerrando SOLetrando")
 
@@ -705,13 +739,7 @@ def shutdown():
     except Exception:
         pass
 
-    try:
-        if stream is not None:
-            stream.stop()
-            stream.close()
-            stream = None
-    except Exception:
-        pass
+    _close_stream()
 
     is_recording = False
     cleanup_lock()
