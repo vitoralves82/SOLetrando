@@ -115,26 +115,42 @@ O executável estará em `dist\soletrando\soletrando.exe`. Clique duas vezes par
 ## Opções
 
 ```
---model     Modelo Whisper: tiny, base, small, medium (padrão), large-v3
---language  Idioma: pt (padrão), en, es, fr, de... ou vazio para detecção automática
+--model     Modelo Whisper: tiny, base, small, medium, large-v3-turbo (padrão), large-v3
+--language  Idioma: pt (padrão), en, es, fr, de... ou "auto" para detecção automática
 ```
 
 ```powershell
 python soletrando.py --model large-v3
 python soletrando.py --model small --language en
+python soletrando.py --language auto
 ```
 
-Você também pode alterar o modelo pelo menu do ícone na bandeja (requer reiniciar).
+Você também pode alterar o modelo, o idioma e o modo de inserção pelo menu do
+ícone na bandeja — a troca é aplicada na hora, sem reiniciar o app.
 
 ### Modelos — velocidade vs. precisão
 
-| Modelo | VRAM (GPU) / RAM (CPU) | Velocidade | Precisão |
-|---|---|---|---|
-| `tiny` | ~1 GB | Muito rápido | Baixa |
-| `base` | ~1 GB | Rápido | Razoável |
-| `small` | ~2 GB | Médio | Boa |
-| **`medium`** | **~5 GB** | **Médio** | **Muito boa** |
-| `large-v3` | ~10 GB | Mais lento | Excelente |
+| Modelo | Parâmetros | VRAM (GPU) / RAM (CPU) | Velocidade | Precisão |
+|---|---|---|---|---|
+| `tiny` | 39 M | ~1 GB | Muito rápido | Baixa |
+| `base` | 74 M | ~1 GB | Rápido | Razoável |
+| `small` | 244 M | ~2 GB | Médio | Boa |
+| `medium` | 769 M | ~5 GB | Médio | Muito boa |
+| **`large-v3-turbo`** | **809 M** | **~6 GB** | **Rápido** | **Excelente** |
+| `large-v3` | 1550 M | ~10 GB | Mais lento | Excelente |
+
+**Por que `large-v3-turbo` é o padrão:** ele tem praticamente o mesmo tamanho do
+`medium` (809 M contra 769 M de parâmetros), mas entrega precisão de classe
+"large" — a diferença média de WER para o `large-v3` completo é de cerca de
+0,4 ponto percentual — e roda ~4× mais rápido que o `large-v3`. Na prática, o
+`medium` deixou de fazer sentido: o turbo é melhor **e** mais rápido no mesmo
+orçamento de memória. Português está entre os idiomas mais bem suportados
+(WER abaixo de 10%).
+
+A única coisa que o turbo perde é a tarefa de *tradução* para inglês, que foi
+retirada do fine-tuning. Como o SOLetrando só faz transcrição, isso não afeta o
+app. Se você configurou `medium` alguma vez, sua escolha é preservada — troque
+para `large-v3-turbo` pelo menu da bandeja para pegar o ganho.
 
 ---
 
@@ -162,16 +178,25 @@ Crie um atalho para `dist\soletrando\soletrando.exe` e coloque em:
 
 ## Configuração
 
-As configurações são salvas em `soletrando_config.json` (na mesma pasta do script/exe):
+As configurações são salvas em `%LOCALAPPDATA%\Soletrando\soletrando_config.json`
+(a mesma pasta guarda o log e o cache dos modelos):
 
 ```json
 {
   "hotkey_toggle": "scroll lock",
   "hotkey_quit": "ctrl+shift+q",
-  "model": "medium",
-  "language": "pt"
+  "model": "large-v3-turbo",
+  "language": "pt",
+  "beep_enabled": false,
+  "insert_mode": "paste"
 }
 ```
+
+- `insert_mode: "paste"` — cola o texto com Ctrl+V. É instantâneo e lida com
+  acentos e emojis perfeitamente. **Padrão.**
+- `insert_mode: "type"` — simula a digitação tecla a tecla. Mais lento, mas
+  necessário em janelas que não aceitam Ctrl+V (alguns terminais usam
+  Ctrl+Shift+V).
 
 Você pode editar este arquivo diretamente ou usar o menu do ícone na bandeja.
 
@@ -183,9 +208,12 @@ Clique com o botão direito no ícone "S" na bandeja do sistema:
 
 - **Tecla de gravar** — escolher atalho de gravação (ScrollLock, F8, F9, F10, Pause, Ctrl+Shift+F, etc.)
 - **Tecla de encerrar** — escolher atalho para sair
-- **Modelo** — escolher modelo Whisper (requer reiniciar)
+- **Modelo** — escolher modelo Whisper (troca em tempo real, sem reiniciar)
+- **Idioma** — Português, Inglês, Espanhol ou detecção automática
+- **Inserção de texto** — colar (rápido) ou digitar (compatível)
+- **Bip sonoro** — sinal sonoro ao iniciar/parar a gravação
 - **Abrir log** — abrir o arquivo de log
-- **Abrir pasta** — abrir a pasta de instalação
+- **Abrir pasta** — abrir a pasta de dados (`%LOCALAPPDATA%\Soletrando`)
 - **Encerrar** — fechar o SOLetrando
 
 ---
@@ -348,7 +376,7 @@ The executable will be in `dist\soletrando\soletrando.exe`. Double-click to run 
 ## Options
 
 ```
---model     Whisper model: tiny, base, small, medium (default), large-v3
+--model     Whisper model: tiny, base, small, medium, large-v3-turbo (default), large-v3
 --language  Language: pt (default), en, es, fr, de... or empty for auto-detect
 ```
 
@@ -361,13 +389,19 @@ You can also change the model via the tray icon menu (requires restart).
 
 ### Models — speed vs. accuracy
 
-| Model | VRAM (GPU) / RAM (CPU) | Speed | Accuracy |
-|---|---|---|---|
-| `tiny` | ~1 GB | Very fast | Low |
-| `base` | ~1 GB | Fast | Fair |
-| `small` | ~2 GB | Medium | Good |
-| **`medium`** | **~5 GB** | **Medium** | **Very good** |
-| `large-v3` | ~10 GB | Slower | Excellent |
+| Model | Parameters | VRAM (GPU) / RAM (CPU) | Speed | Accuracy |
+|---|---|---|---|---|
+| `tiny` | 39 M | ~1 GB | Very fast | Low |
+| `base` | 74 M | ~1 GB | Fast | Fair |
+| `small` | 244 M | ~2 GB | Medium | Good |
+| `medium` | 769 M | ~5 GB | Medium | Very good |
+| **`large-v3-turbo`** | **809 M** | **~6 GB** | **Fast** | **Excellent** |
+| `large-v3` | 1550 M | ~10 GB | Slower | Excellent |
+
+`large-v3-turbo` is the default: same footprint as `medium` (809 M vs 769 M
+parameters), large-class accuracy (~0.4 pp average WER gap to full `large-v3`),
+and ~4× faster than `large-v3`. It drops only the English *translation* task,
+which SOLetrando does not use.
 
 ---
 
@@ -395,14 +429,17 @@ Create a shortcut to `dist\soletrando\soletrando.exe` and place it in:
 
 ## Configuration
 
-Settings are saved in `soletrando_config.json` (same folder as the script/exe):
+Settings are saved in `%LOCALAPPDATA%\Soletrando\soletrando_config.json`
+(the same folder holds the log and the model cache):
 
 ```json
 {
   "hotkey_toggle": "scroll lock",
   "hotkey_quit": "ctrl+shift+q",
-  "model": "medium",
-  "language": "pt"
+  "model": "large-v3-turbo",
+  "language": "pt",
+  "beep_enabled": false,
+  "insert_mode": "paste"
 }
 ```
 
@@ -416,7 +453,9 @@ Right-click the "S" icon in the system tray:
 
 - **Tecla de gravar** — choose recording hotkey (ScrollLock, F8, F9, F10, Pause, Ctrl+Shift+F, etc.)
 - **Tecla de encerrar** — choose quit hotkey
-- **Modelo** — choose Whisper model (requires restart)
+- **Modelo** — choose Whisper model (hot-swapped, no restart)
+- **Idioma** — Portuguese, English, Spanish or auto-detect
+- **Inserção de texto** — paste (fast) or type (compatible)
 - **Abrir log** — open the log file
 - **Abrir pasta** — open the installation folder
 - **Encerrar** — quit SOLetrando

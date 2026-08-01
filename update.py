@@ -4,7 +4,6 @@ Consulta o GitHub Releases e baixa a versao mais recente.
 """
 
 import json
-import os
 import sys
 import shutil
 import tempfile
@@ -16,6 +15,7 @@ from urllib.error import URLError
 REPO = "vitoralves82/SOLetrando"
 API_URL = f"https://api.github.com/repos/{REPO}/releases/latest"
 VERSION_FILE = "version.txt"
+USER_AGENT = "SOLetrando-Updater"
 
 
 def get_script_dir():
@@ -35,12 +35,17 @@ def get_local_version():
 
 
 def get_latest_release():
-    req = Request(API_URL, headers={"Accept": "application/vnd.github+json"})
+    req = Request(API_URL, headers={
+        "Accept": "application/vnd.github+json",
+        "User-Agent": USER_AGENT,
+    })
     try:
         with urlopen(req, timeout=15) as resp:
             data = json.loads(resp.read().decode("utf-8"))
-    except URLError as e:
-        print(f"[ERRO] Nao foi possivel conectar ao GitHub: {e}")
+    except (URLError, OSError, ValueError) as e:
+        # Antes so URLError era tratado: um JSON invalido ou um timeout de
+        # socket derrubavam o atualizador com traceback.
+        print(f"[ERRO] Nao foi possivel consultar o GitHub: {e}")
         return None, None, None
 
     tag = data.get("tag_name", "").lstrip("v")
@@ -57,7 +62,7 @@ def get_latest_release():
 
 def download_and_extract(zip_url, dest_dir):
     print("[*] Baixando atualizacao...")
-    req = Request(zip_url)
+    req = Request(zip_url, headers={"User-Agent": USER_AGENT})
     tmp = Path(tempfile.mkdtemp())
     zip_path = tmp / "update.zip"
 
@@ -76,14 +81,20 @@ def download_and_extract(zip_url, dest_dir):
                         pct = downloaded * 100 // total
                         print(f"\r    {pct}% ({downloaded // (1024*1024)} MB)", end="", flush=True)
             print()
-    except URLError as e:
+    except (URLError, OSError) as e:
         print(f"\n[ERRO] Falha no download: {e}")
+        shutil.rmtree(tmp, ignore_errors=True)
         return False
 
     print("[*] Extraindo arquivos...")
-    extract_dir = tmp / "extracted"
-    with zipfile.ZipFile(zip_path, "r") as zf:
-        zf.extractall(extract_dir)
+    try:
+        extract_dir = tmp / "extracted"
+        with zipfile.ZipFile(zip_path, "r") as zf:
+            zf.extractall(extract_dir)
+    except (zipfile.BadZipFile, OSError) as e:
+        print(f"[ERRO] Arquivo de atualizacao invalido: {e}")
+        shutil.rmtree(tmp, ignore_errors=True)
+        return False
 
     contents = list(extract_dir.iterdir())
     if len(contents) == 1 and contents[0].is_dir():
@@ -91,19 +102,37 @@ def download_and_extract(zip_url, dest_dir):
     else:
         source = extract_dir
 
+    # Config e log agora vivem em %LOCALAPPDATA%\Soletrando, mas mantemos a
+    # lista para instalacoes antigas que ainda tenham os arquivos ao lado do exe.
     preserve = {"soletrando_config.json", "soletrando.log"}
+    locked = []
     for item in source.rglob("*"):
         rel = item.relative_to(source)
         if rel.name in preserve:
             continue
         target = dest_dir / rel
-        if item.is_dir():
-            target.mkdir(parents=True, exist_ok=True)
-        else:
-            target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(item, target)
+        try:
+            if item.is_dir():
+                target.mkdir(parents=True, exist_ok=True)
+            else:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(item, target)
+        except OSError as e:
+            # Tipicamente o soletrando.exe esta rodando e o Windows bloqueia a
+            # escrita. Antes isso abortava no meio, deixando a instalacao
+            # misturando arquivos de duas versoes.
+            locked.append((rel, e))
 
     shutil.rmtree(tmp, ignore_errors=True)
+
+    if locked:
+        print()
+        print(f"  [ERRO] {len(locked)} arquivo(s) nao puderam ser substituidos:")
+        for rel, e in locked[:5]:
+            print(f"    - {rel}: {e}")
+        print("  Feche o SOLetrando (icone na bandeja > Encerrar) e rode o update novamente.")
+        return False
+
     return True
 
 
@@ -115,7 +144,7 @@ def main():
 
     local_ver = get_local_version()
     print(f"  Versao local:  {local_ver}")
-    print(f"  Verificando GitHub...", end=" ", flush=True)
+    print("  Verificando GitHub...", end=" ", flush=True)
 
     remote_ver, zip_url, release_notes = get_latest_release()
 
