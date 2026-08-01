@@ -91,13 +91,13 @@ def main():
         _, target, working_dir = ctx
         arguments = ""
         icon_path = str(target)
-        print(f"  Modo: executavel (.exe)")
+        print("  Modo: executavel (.exe)")
         print(f"  Target: {target}")
     else:
         _, target, working_dir, soletrando_py = ctx
         arguments = str(soletrando_py)
         icon_path = None
-        print(f"  Modo: codigo-fonte")
+        print("  Modo: codigo-fonte")
         print(f"  Target: {target} {soletrando_py.name}")
 
     print()
@@ -117,7 +117,7 @@ def main():
             icon_path=icon_path,
             description="SOLetrando - Ditado por voz local",
         )
-        print(f"  \u2713 Atalho criado no Desktop")
+        print("  \u2713 Atalho criado no Desktop")
     except Exception as e:
         print(f"  \u2717 Erro ao criar atalho no Desktop: {e}")
         errors.append(("Desktop", e))
@@ -133,7 +133,7 @@ def main():
             icon_path=icon_path,
             description="SOLetrando - Ditado por voz local",
         )
-        print(f"  \u2713 Atalho criado no Startup (inicializacao automatica)")
+        print("  \u2713 Atalho criado no Startup (inicializacao automatica)")
     except Exception as e:
         print(f"  \u2717 Erro ao criar atalho no Startup: {e}")
         errors.append(("Startup", e))

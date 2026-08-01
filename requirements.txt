@@ -1,8 +1,12 @@
-faster-whisper
-numpy
-sounddevice
-keyboard
-pystray
-Pillow
-pyinstaller
-huggingface_hub
+# Versoes minimas fixadas: faster-whisper >= 1.1.0 e o primeiro release que
+# conhece os modelos "large-v3-turbo"/"turbo" usados por padrao pelo app.
+faster-whisper>=1.1.0,<2
+numpy>=1.24,<3
+sounddevice>=0.4.6
+keyboard>=0.13.5
+pystray>=0.19.5
+Pillow>=10.0
+huggingface_hub>=0.21
+
+# Somente para gerar o executavel (nao e necessario para rodar o app)
+pyinstaller>=6.0
