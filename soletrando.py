@@ -596,9 +596,14 @@ watchdog_timer = None      # cancelado ao parar (antes vazava 1 thread/gravacao)
 # =====================================================================
 # TRAY ICON
 # =====================================================================
-COLOR_IDLE = "#888888"
-COLOR_REC = "#00C853"
-COLOR_TRANSCRIBING = "#FFC107"
+COLOR_IDLE = "#FFC107"        # amarelo, igual ao icon_idle.png
+COLOR_REC = "#00C853"         # verde, igual ao icon_recording.png
+COLOR_TRANSCRIBING = "#FF0000"  # vermelho, igual ao icon_transcribing.png
+
+# Tempo minimo que um estado fica visivel na bandeja. Com o turbo + colagem
+# por Ctrl+V a transcricao ficou tao rapida que o icone vermelho piscava por
+# poucos milissegundos e passava despercebido.
+MIN_STATE_VISIBLE_SECONDS = 0.6
 
 
 def make_icon_image(color, letter="S"):
@@ -619,35 +624,64 @@ def make_icon_image(color, letter="S"):
     return img
 
 
+ICON_FILES = {
+    "idle": "icon_idle.png",
+    "recording": "icon_recording.png",
+    "transcribing": "icon_transcribing.png",
+}
+
+
+def _icon_search_dirs():
+    """Pastas onde procurar os PNGs, em ordem de prioridade.
+
+    sys._MEIPASS cobre o build onefile do PyInstaller, onde os arquivos de
+    dados sao extraidos para uma pasta temporaria em vez de ficarem ao lado
+    do .exe — nesse modo a busca so em INSTALL_DIR falha e o app caia no
+    icone generico desenhado em codigo.
+    """
+    dirs = [INSTALL_DIR]
+    meipass = getattr(sys, "_MEIPASS", None)
+    if meipass:
+        dirs.append(Path(meipass))
+    try:
+        dirs.append(Path(__file__).parent)
+    except NameError:
+        pass
+    seen = []
+    for d in dirs:
+        if d not in seen:
+            seen.append(d)
+    return seen
+
+
 _icon_cache = {}
 
 
 def load_icon(state):
-    """Carrega PNG do estado; fallback para icone gerado.
-
-    Os PNGs sao lidos e redimensionados uma unica vez — antes isso rodava a
-    cada mudanca de estado, tocando o disco em cada toggle.
-    """
+    """Carrega o PNG do estado; fallback para icone colorido gerado em codigo."""
     if state in _icon_cache:
         return _icon_cache[state]
 
-    icon_map = {
-        "idle": "icon_idle.png",
-        "recording": "icon_recording.png",
-        "transcribing": "icon_transcribing.png",
-    }
+    filename = ICON_FILES.get(state, ICON_FILES["idle"])
     img = None
-    try:
-        icon_path = INSTALL_DIR / icon_map.get(state, "icon_idle.png")
-        if icon_path.exists():
-            img = Image.open(icon_path).resize((64, 64), Image.LANCZOS)
-    except Exception as e:
-        log(f"Erro ao carregar icone {state}: {e}")
+    for base in _icon_search_dirs():
+        try:
+            icon_path = base / filename
+            if icon_path.exists():
+                img = Image.open(icon_path).resize((64, 64), Image.LANCZOS)
+                break
+        except Exception as e:
+            log(f"Erro ao carregar icone {state} em {base}: {e}")
 
     if img is None:
+        # Fallback com as MESMAS cores dos PNGs (amarelo/verde/vermelho), para
+        # que o feedback visual continue correto mesmo sem os arquivos.
+        log(f"Icone '{filename}' nao encontrado, usando icone gerado para '{state}'")
         colors = {"idle": COLOR_IDLE, "recording": COLOR_REC, "transcribing": COLOR_TRANSCRIBING}
-        img = make_icon_image(colors.get(state, COLOR_IDLE), "S")
+        return make_icon_image(colors.get(state, COLOR_IDLE), "S")
 
+    # So o PNG e cacheado: uma falha temporaria de leitura nao fica presa
+    # para sempre no cache.
     _icon_cache[state] = img
     return img
 
@@ -657,7 +691,13 @@ def idle_title():
     return f"SOLetrando [{config['model']} | {lang}] - {config['hotkey_toggle'].title()} para gravar"
 
 
+_tray_state = None
+
+
 def update_tray(state, extra=None):
+    """Troca o icone da bandeja: amarelo=parado, verde=gravando, vermelho=transcrevendo."""
+    global _tray_state
+
     if tray_icon is None:
         return
     try:
@@ -668,8 +708,18 @@ def update_tray(state, extra=None):
             tray_icon.title = extra or "SOLetrando - Transcrevendo... aguarde"
         else:
             tray_icon.title = extra or idle_title()
+
+        # pystray so envia o icone para a bandeja quando 'visible' e True; se
+        # por algum motivo ele estiver oculto, reexibimos em vez de deixar o
+        # usuario sem nenhum retorno visual.
+        if not getattr(tray_icon, "visible", True):
+            tray_icon.visible = True
+
+        if state != _tray_state:
+            log(f"Icone da bandeja -> {state}")
+            _tray_state = state
     except Exception as e:
-        log(f"Erro ao atualizar tray: {e}")
+        log(f"Erro ao atualizar tray ({state}): {e}")
 
 
 def notify(message, title="SOLetrando"):
@@ -1034,6 +1084,8 @@ MAX_NORMALIZATION_GAIN = 8.0    # evita amplificar ruido de fundo em 100x
 def stop_and_transcribe():
     global is_recording, audio_frames, is_transcribing
 
+    transcribe_started_at = None
+
     with state_lock:
         if not is_recording or is_transcribing:
             return
@@ -1058,6 +1110,7 @@ def stop_and_transcribe():
             return
 
         update_tray("transcribing")
+        transcribe_started_at = time.monotonic()
         log("Transcrevendo...")
 
         try:
@@ -1127,9 +1180,18 @@ def stop_and_transcribe():
     except Exception as e:
         log(f"Erro inesperado na transcricao: {e}")
     finally:
+        # Segura o icone vermelho pelo tempo minimo antes de voltar ao amarelo.
+        # A espera acontece com is_transcribing ainda True, entao um toggle
+        # nesse intervalo e ignorado (e registrado) em vez de disputar o estado.
+        if transcribe_started_at is not None:
+            restante = MIN_STATE_VISIBLE_SECONDS - (time.monotonic() - transcribe_started_at)
+            if restante > 0:
+                time.sleep(restante)
         with state_lock:
             is_transcribing = False
-        update_tray("idle")
+            # Se o usuario ja comecou outra gravacao, nao sobrescreve o verde.
+            if not is_recording:
+                update_tray("idle")
 
 
 # =====================================================================
