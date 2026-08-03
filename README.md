@@ -246,6 +246,34 @@ soletrando/
 | Texto não aparece no app | Certifique-se de que o cursor está no app de destino antes de pressionar o atalho |
 | "Instance already running" | Delete `%TEMP%\soletrando.lock` ou encerre o `pythonw.exe` |
 | Ícone não visível na bandeja | Clique na seta `^` na barra de tarefas para ver ícones ocultos |
+| O atalho para de responder depois de alguns minutos | Corrigido na versão atual (veja abaixo). Se ainda ocorrer, abra o log pelo menu da bandeja e procure por `Atalhos inativos` |
+| "O atalho X já está reservado por outro programa" | Outro aplicativo registrou a mesma tecla antes do SOLetrando. Escolha outro atalho em **Tecla de gravar** no menu da bandeja |
+| O atalho não funciona dentro de um programa específico | Programas executados **como administrador** ignoram atalhos de programas comuns (proteção UIPI do Windows). Rode o SOLetrando como administrador também |
+
+### Por que o atalho parava de funcionar
+
+Até a versão anterior os atalhos usavam um *hook* global de teclado
+(`WH_KEYBOARD_LL`, via biblioteca `keyboard`). Nesse modelo, **toda** tecla
+digitada em **qualquer** programa passa por código Python dentro do hook.
+
+O Windows dá a esse hook um orçamento de tempo — o valor de
+`HKCU\Control Panel\Desktop\LowLevelHooksTimeout`, 300 ms por padrão — e, do
+Windows 7 em diante, **remove o hook silenciosamente** quando esse limite
+estoura. Bastava uma transcrição pesada (ou o antivírus inspecionando o
+processo) travar o interpretador por mais de 300 ms para o atalho morrer: o
+programa continuava aberto, o ícone continuava na bandeja, o menu continuava
+abrindo — mas a tecla nunca mais respondia até reiniciar o aplicativo.
+
+Agora os atalhos usam `RegisterHotKey`, a API do Windows feita para atalhos
+globais. Ela não instala hook nenhum: o Windows entrega o evento direto na
+fila de mensagens do SOLetrando. Não há orçamento de tempo para estourar, não
+há hook para ser removido, e o custo por tecla digitada no resto do sistema
+passa a ser zero. Um monitor interno ainda confere os atalhos a cada 30
+segundos e os registra de novo se algum deixar de valer.
+
+Efeito colateral esperado: o `ScrollLock` agora é consumido pelo SOLetrando,
+então o LED do teclado deixa de acender ao usá-lo como atalho. O estado da
+gravação continua sendo indicado pela cor do ícone na bandeja.
 
 ---
 
@@ -472,6 +500,34 @@ Right-click the "S" icon in the system tray:
 | Text not appearing in app | Make sure cursor is in the target app before pressing the hotkey |
 | "Instance already running" | Delete `%TEMP%\soletrando.lock` or kill `pythonw.exe` |
 | Tray icon not visible | Click the `^` arrow in the taskbar to see hidden icons |
+| Hotkey stops responding after a few minutes | Fixed in the current version (see below). If it still happens, open the log from the tray menu and look for `Atalhos inativos` |
+| "Hotkey X is already reserved by another program" | Another application registered the same key first. Pick a different one under **Tecla de gravar** in the tray menu |
+| Hotkey does not work inside a specific program | Programs running **as administrator** ignore hotkeys from normal programs (Windows UIPI protection). Run SOLetrando as administrator too |
+
+### Why the hotkey used to stop working
+
+Until the previous version, hotkeys relied on a global keyboard hook
+(`WH_KEYBOARD_LL`, via the `keyboard` library). In that model **every**
+keystroke in **any** program runs Python code inside the hook.
+
+Windows gives that hook a time budget — the value of
+`HKCU\Control Panel\Desktop\LowLevelHooksTimeout`, 300 ms by default — and,
+starting with Windows 7, **silently removes the hook** when the budget is
+exceeded. A single heavy transcription (or an antivirus scanning the process)
+stalling the interpreter for more than 300 ms was enough to kill the hotkey:
+the app stayed open, the tray icon stayed there, the menu still worked — but
+the key never responded again until the app was restarted.
+
+Hotkeys now use `RegisterHotKey`, the Windows API designed for global
+shortcuts. It installs no hook: Windows delivers the event straight to
+SOLetrando's message queue. There is no time budget to exceed, no hook to be
+removed, and the per-keystroke cost for the rest of the system drops to zero.
+An internal monitor also re-checks the hotkeys every 30 seconds and
+re-registers any that stopped being valid.
+
+Expected side effect: `ScrollLock` is now consumed by SOLetrando, so the
+keyboard LED no longer toggles when it is used as the hotkey. Recording state
+is still shown by the tray icon color.
 
 ---
 

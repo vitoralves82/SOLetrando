@@ -12,6 +12,7 @@ import sys
 import time
 import warnings
 import threading
+import queue
 import os
 import json
 import tempfile
@@ -733,8 +734,382 @@ def notify(message, title="SOLetrando"):
 # =====================================================================
 # HOTKEY MANAGEMENT
 # =====================================================================
+# POR QUE NAO USAMOS keyboard.add_hotkey NO WINDOWS
+# -------------------------------------------------
+# A biblioteca `keyboard` instala um WH_KEYBOARD_LL: um hook global de baixo
+# nivel. TODA tecla digitada em QUALQUER programa do sistema passa por uma
+# funcao Python dentro desse hook (keyboard/_winkeyboard.py: process_key), o
+# que exige adquirir o GIL antes de qualquer coisa.
+#
+# O Windows da a esse hook um orcamento de tempo — o valor de
+# HKCU\Control Panel\Desktop\LowLevelHooksTimeout, 300 ms por padrao — e, do
+# Windows 7 em diante, REMOVE o hook silenciosamente quando o limite estoura.
+# Nao ha excecao, nao ha aviso, nao ha log.
+#
+# Basta uma transcricao (ou o antivirus inspecionando o processo, ou o disco
+# engasgando ao gravar o log) segurar o GIL por mais de 300 ms para o hook
+# morrer. O app continua vivo, o icone continua na bandeja, o menu continua
+# abrindo — mas o atalho nunca mais responde ate reiniciar o programa. Era
+# exatamente o sintoma de "para de funcionar depois de alguns minutos de uso"
+# e a razao de parecer que "o Windows esta bloqueando".
+#
+# RegisterHotKey nao usa hook nenhum: o Windows entrega um WM_HOTKEY direto na
+# fila de mensagens da thread que registrou o atalho. Nao ha orcamento de
+# tempo para estourar, nao ha hook para ser removido, e o custo por tecla
+# digitada no resto do sistema passa a ser zero.
+WM_HOTKEY = 0x0312
+WM_APP_RELOAD = 0x8001   # WM_APP + 1
+WM_APP_STOP = 0x8002     # WM_APP + 2
+PM_NOREMOVE = 0x0000
+
+MOD_ALT = 0x0001
+MOD_CONTROL = 0x0002
+MOD_SHIFT = 0x0004
+MOD_WIN = 0x0008
+MOD_NOREPEAT = 0x4000    # segurar a tecla nao dispara o atalho repetidas vezes
+
+ERROR_HOTKEY_ALREADY_REGISTERED = 1409
+
+HOTKEY_ID_TOGGLE = 1
+HOTKEY_ID_QUIT = 2
+
+_VK_BY_NAME = {
+    "scroll lock": 0x91,
+    "pause": 0x13,
+    "space": 0x20,
+    "esc": 0x1B,
+    "escape": 0x1B,
+    "tab": 0x09,
+    "enter": 0x0D,
+    "backspace": 0x08,
+    "insert": 0x2D,
+    "delete": 0x2E,
+    "home": 0x24,
+    "end": 0x23,
+    "page up": 0x21,
+    "page down": 0x22,
+    "print screen": 0x2C,
+}
+for _n in range(1, 25):
+    _VK_BY_NAME[f"f{_n}"] = 0x6F + _n            # VK_F1 == 0x70
+for _ch in "abcdefghijklmnopqrstuvwxyz0123456789":
+    _VK_BY_NAME[_ch] = ord(_ch.upper())
+
+_MOD_BY_NAME = {
+    "ctrl": MOD_CONTROL,
+    "control": MOD_CONTROL,
+    "shift": MOD_SHIFT,
+    "alt": MOD_ALT,
+    "win": MOD_WIN,
+    "windows": MOD_WIN,
+    "super": MOD_WIN,
+}
+
+
+def parse_hotkey_spec(spec):
+    """'ctrl+shift+q' -> (MOD_CONTROL | MOD_SHIFT, VK_Q). None se nao mapeavel."""
+    mods = 0
+    vk = None
+    for part in str(spec).lower().split("+"):
+        part = part.strip()
+        if not part:
+            return None
+        if part in _MOD_BY_NAME:
+            mods |= _MOD_BY_NAME[part]
+        elif vk is None and part in _VK_BY_NAME:
+            vk = _VK_BY_NAME[part]
+        else:
+            return None
+    if vk is None:
+        return None
+    return mods, vk
+
+
+class _MSG(ctypes.Structure):
+    """MSG do Win32. O campo extra no fim e apenas folga defensiva, para o
+    caso de o GetMessageW escrever uma struct maior que a declarada aqui."""
+    _fields_ = [
+        ("hwnd", ctypes.c_void_p),
+        ("message", ctypes.c_uint),
+        ("wParam", ctypes.c_size_t),
+        ("lParam", ctypes.c_ssize_t),
+        ("time", ctypes.c_uint),
+        ("pt_x", ctypes.c_long),
+        ("pt_y", ctypes.c_long),
+        ("_reserved", ctypes.c_ulonglong),
+    ]
+
+
+class Win32HotkeyManager:
+    """Atalhos globais via RegisterHotKey, em thread propria com message loop.
+
+    RegisterHotKey e por thread: so a thread que registrou recebe o WM_HOTKEY
+    e so ela pode registrar/cancelar. Por isso toda troca de atalho e enviada
+    para essa thread com PostThreadMessageW, em vez de mexer nos registros de
+    fora.
+
+    Os callbacks rodam numa thread de despacho separada, para que abrir o
+    microfone (que pode levar centenas de milissegundos) nunca segure o loop
+    de mensagens e atrase o proximo atalho.
+    """
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._apply_lock = threading.Lock()
+        self._callbacks = {}        # id -> (rotulo, funcao)
+        self._desired = {}          # id -> (spec, mods, vk)
+        self._active = {}           # id -> (spec, mods, vk) — so a thread mexe
+        self._result = {}
+        self._result_event = threading.Event()
+        self._ready = threading.Event()
+        self._thread = None
+        self._thread_id = None
+        self._jobs = queue.Queue()
+        self._worker = None
+
+    # ------------------------------------------------------------------
+    # API publica (pode ser chamada de qualquer thread)
+    # ------------------------------------------------------------------
+    def set_callback(self, hotkey_id, label, callback):
+        with self._lock:
+            self._callbacks[hotkey_id] = (label, callback)
+
+    def is_alive(self):
+        thread = self._thread
+        return bool(thread and thread.is_alive() and self._ready.is_set())
+
+    def inactive_specs(self):
+        """Atalhos que deveriam estar valendo mas nao estao."""
+        with self._lock:
+            desired = dict(self._desired)
+        if not desired:
+            return []
+        if not self.is_alive():
+            return [entry[0] for entry in desired.values()]
+        return [entry[0] for hid, entry in desired.items()
+                if self._active.get(hid) != entry]
+
+    def apply(self, specs, timeout=5.0):
+        """Aplica {id: 'ctrl+shift+q'}.
+
+        Retorna {id: None | mensagem_de_erro}, ou None se o backend Win32 nao
+        estiver disponivel — nesse caso o chamador cai no fallback.
+        """
+        if not IS_WINDOWS:
+            return None
+
+        parsed = {}
+        errors = {}
+        for hid, spec in specs.items():
+            parsed_spec = parse_hotkey_spec(spec)
+            if parsed_spec is None:
+                errors[hid] = f"o atalho '{spec}' nao e suportado pelo Windows"
+            else:
+                parsed[hid] = (spec, parsed_spec[0], parsed_spec[1])
+
+        with self._apply_lock:
+            with self._lock:
+                self._desired = parsed
+            self._result_event.clear()
+            if not self._ensure_started():
+                log("Nao foi possivel iniciar a thread de hotkeys do Windows")
+                return None
+            if not self._post(WM_APP_RELOAD):
+                return None
+            if not self._result_event.wait(timeout):
+                log("Timeout ao aplicar os atalhos na thread de hotkeys")
+                return None
+            with self._lock:
+                result = dict(self._result)
+
+        result.update(errors)
+        return result
+
+    def stop(self):
+        self._post(WM_APP_STOP)
+        self._jobs.put(None)
+
+    # ------------------------------------------------------------------
+    # Interno
+    # ------------------------------------------------------------------
+    def _ensure_started(self):
+        if self.is_alive():
+            return True
+        thread = self._thread
+        if thread is not None and thread.is_alive():
+            return self._ready.wait(3.0)  # ainda subindo
+
+        self._ready.clear()
+        self._thread = threading.Thread(
+            target=self._loop, name="soletrando-hotkeys", daemon=True)
+        self._thread.start()
+
+        if self._worker is None or not self._worker.is_alive():
+            self._worker = threading.Thread(
+                target=self._dispatch_loop, name="soletrando-hotkeys-dispatch",
+                daemon=True)
+            self._worker.start()
+
+        return self._ready.wait(3.0)
+
+    def _post(self, message):
+        thread_id = self._thread_id
+        if not thread_id:
+            return False
+        try:
+            user32 = ctypes.windll.user32
+            user32.PostThreadMessageW.argtypes = [
+                ctypes.c_ulong, ctypes.c_uint, ctypes.c_size_t, ctypes.c_ssize_t]
+            return bool(user32.PostThreadMessageW(thread_id, message, 0, 0))
+        except Exception as e:
+            log(f"Falha ao falar com a thread de hotkeys: {e}")
+            return False
+
+    def _loop(self):
+        try:
+            user32 = ctypes.windll.user32
+            kernel32 = ctypes.windll.kernel32
+            user32.GetMessageW.restype = ctypes.c_int
+            user32.GetMessageW.argtypes = [
+                ctypes.POINTER(_MSG), ctypes.c_void_p, ctypes.c_uint, ctypes.c_uint]
+            user32.RegisterHotKey.argtypes = [
+                ctypes.c_void_p, ctypes.c_int, ctypes.c_uint, ctypes.c_uint]
+            user32.UnregisterHotKey.argtypes = [ctypes.c_void_p, ctypes.c_int]
+
+            msg = _MSG()
+            # Forca a criacao da fila de mensagens ANTES de publicar o
+            # thread_id: sem isso o PostThreadMessageW disparado logo em
+            # seguida seria descartado sem erro nenhum.
+            user32.PeekMessageW(ctypes.byref(msg), None, 0x0400, 0x0400, PM_NOREMOVE)
+            self._thread_id = kernel32.GetCurrentThreadId()
+            self._ready.set()
+            log("Thread de hotkeys (RegisterHotKey) iniciada")
+
+            while True:
+                ret = user32.GetMessageW(ctypes.byref(msg), None, 0, 0)
+                if ret in (0, -1):  # WM_QUIT ou erro
+                    break
+                if msg.message == WM_HOTKEY:
+                    self._jobs.put(int(msg.wParam))
+                elif msg.message == WM_APP_RELOAD:
+                    self._reload(user32, kernel32)
+                elif msg.message == WM_APP_STOP:
+                    break
+        except Exception as e:
+            log(f"Thread de hotkeys terminou com erro: {e}")
+        finally:
+            self._ready.clear()
+            self._thread_id = None
+            try:
+                self._unregister_all()
+            except Exception:
+                pass
+            log("Thread de hotkeys encerrada")
+
+    def _dispatch_loop(self):
+        while True:
+            hotkey_id = self._jobs.get()
+            if hotkey_id is None:
+                return
+            with self._lock:
+                entry = self._callbacks.get(hotkey_id)
+            if entry is None:
+                continue
+            label, callback = entry
+            try:
+                callback()
+            except Exception as e:
+                log(f"Erro no callback do atalho '{label}': {e}")
+
+    def _reload(self, user32, kernel32):
+        with self._lock:
+            desired = dict(self._desired)
+        result = {}
+
+        for hid in list(self._active):
+            if self._active[hid] != desired.get(hid):
+                user32.UnregisterHotKey(None, hid)
+                del self._active[hid]
+
+        for hid, entry in desired.items():
+            if self._active.get(hid) == entry:
+                result[hid] = None
+                continue
+            spec, mods, vk = entry
+            if user32.RegisterHotKey(None, hid, mods | MOD_NOREPEAT, vk):
+                self._active[hid] = entry
+                result[hid] = None
+                log(f"Atalho '{spec}' registrado (RegisterHotKey)")
+                continue
+            # GetLastError e lido imediatamente: qualquer outra chamada Win32
+            # no meio sobrescreveria o codigo do erro que interessa.
+            err = kernel32.GetLastError()
+            if err == ERROR_HOTKEY_ALREADY_REGISTERED:
+                result[hid] = (f"o atalho '{spec}' ja esta reservado por outro "
+                               f"programa. Escolha outro no menu da bandeja")
+            else:
+                result[hid] = f"o Windows recusou o atalho '{spec}' (erro {err})"
+
+        with self._lock:
+            self._result = result
+        self._result_event.set()
+
+    def _unregister_all(self):
+        user32 = ctypes.windll.user32
+        for hid in list(self._active):
+            try:
+                user32.UnregisterHotKey(None, hid)
+            except Exception:
+                pass
+            self._active.pop(hid, None)
+
+
+hotkey_manager = Win32HotkeyManager() if IS_WINDOWS else None
+_hotkey_backend = "none"
+# O monitor de saude tenta registrar de novo a cada 30s. Sem lembrar o que ja
+# foi avisado, um atalho tomado de forma permanente por outro programa viraria
+# um balao de notificacao a cada meio minuto.
+_notified_hotkey_problems = set()
+
+
 def register_hotkeys():
-    global current_hotkey_toggle, current_hotkey_quit
+    """(Re)registra os atalhos globais. True se todos ficaram ativos."""
+    global _hotkey_backend, _notified_hotkey_problems
+
+    if hotkey_manager is not None:
+        hotkey_manager.set_callback(HOTKEY_ID_TOGGLE, "gravar", toggle)
+        hotkey_manager.set_callback(HOTKEY_ID_QUIT, "encerrar", request_shutdown)
+        results = hotkey_manager.apply({
+            HOTKEY_ID_TOGGLE: config["hotkey_toggle"],
+            HOTKEY_ID_QUIT: config["hotkey_quit"],
+        })
+        if results is not None:
+            _hotkey_backend = "win32"
+            problems = {msg for msg in results.values() if msg}
+            for msg in sorted(problems):
+                log(f"Atalho nao registrado: {msg}.")
+                if msg not in _notified_hotkey_problems:
+                    notify(f"Atencao: {msg}.")
+            _notified_hotkey_problems = problems
+            if not problems:
+                log(f"Hotkeys ativas via RegisterHotKey: "
+                    f"toggle={config['hotkey_toggle']}, quit={config['hotkey_quit']}")
+            return not problems
+        log("RegisterHotKey indisponivel; caindo para o hook do 'keyboard'")
+
+    return _register_hotkeys_fallback()
+
+
+def _register_hotkeys_fallback():
+    """Caminho antigo, com o hook global do 'keyboard'.
+
+    Usado no Linux (desenvolvimento) e no caso improvavel de o RegisterHotKey
+    nao subir no Windows. No Windows este caminho continua sujeito ao
+    LowLevelHooksTimeout descrito no topo da secao, entao ele e ultimo recurso.
+    """
+    global current_hotkey_toggle, current_hotkey_quit, _hotkey_backend
+
+    _hotkey_backend = "keyboard"
 
     # Remove hotkeys anteriores se existirem
     try:
@@ -753,7 +1128,8 @@ def register_hotkeys():
     try:
         current_hotkey_toggle = keyboard.add_hotkey(config["hotkey_toggle"], toggle)
         current_hotkey_quit = keyboard.add_hotkey(config["hotkey_quit"], request_shutdown)
-        log(f"Hotkeys registradas: toggle={config['hotkey_toggle']}, quit={config['hotkey_quit']}")
+        log(f"Hotkeys registradas (hook do 'keyboard'): "
+            f"toggle={config['hotkey_toggle']}, quit={config['hotkey_quit']}")
         return True
     except Exception as e:
         log(f"Erro ao registrar hotkeys: {e}")
@@ -994,6 +1370,33 @@ def copy_to_clipboard(text):
 # INSERIR TEXTO
 # =====================================================================
 MODIFIER_KEYS = ("ctrl", "shift", "alt", "left windows", "right windows")
+# VK_SHIFT, VK_CONTROL, VK_MENU (alt), VK_LWIN, VK_RWIN
+_MODIFIER_VKS = (0x10, 0x11, 0x12, 0x5B, 0x5C)
+
+
+def _modifiers_pressed():
+    """True se algum modificador esta fisicamente pressionado.
+
+    No Windows usamos GetAsyncKeyState, que le o estado real do teclado. A
+    versao anterior usava keyboard.is_pressed(), e essa chamada INSTALA o
+    WH_KEYBOARD_LL da biblioteca `keyboard` — ou seja, reintroduziria pela
+    porta dos fundos exatamente o hook que o RegisterHotKey veio eliminar.
+    """
+    if IS_WINDOWS:
+        try:
+            user32 = ctypes.windll.user32
+            user32.GetAsyncKeyState.restype = ctypes.c_short
+            user32.GetAsyncKeyState.argtypes = [ctypes.c_int]
+            return any(user32.GetAsyncKeyState(vk) & 0x8000 for vk in _MODIFIER_VKS)
+        except Exception:
+            return False
+
+    if _hotkey_backend == "keyboard":
+        try:
+            return any(keyboard.is_pressed(k) for k in MODIFIER_KEYS)
+        except Exception:
+            return False
+    return False
 
 
 def wait_modifiers_released(timeout=1.5):
@@ -1005,10 +1408,7 @@ def wait_modifiers_released(timeout=1.5):
     """
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        try:
-            if not any(keyboard.is_pressed(k) for k in MODIFIER_KEYS):
-                return True
-        except Exception:
+        if not _modifiers_pressed():
             return True
         time.sleep(0.02)
     return False
@@ -1299,7 +1699,13 @@ def _do_shutdown():
     log("Encerrando SOLetrando")
 
     try:
-        keyboard.unhook_all_hotkeys()
+        if hotkey_manager is not None:
+            hotkey_manager.stop()
+    except Exception:
+        pass
+    try:
+        if _hotkey_backend == "keyboard":
+            keyboard.unhook_all_hotkeys()
     except Exception:
         pass
 
@@ -1339,6 +1745,51 @@ def request_shutdown():
 
 def on_tray_quit(icon, item):
     request_shutdown()
+
+
+# =====================================================================
+# MONITOR DE SAUDE
+# =====================================================================
+# Rede de seguranca: mesmo com o RegisterHotKey um atalho pode deixar de
+# valer (outro programa registrou a mesma tecla depois de nos, ou a thread
+# de mensagens morreu). Sem este monitor o app fica aberto e inerte, que era
+# justamente o que o usuario via. Aqui ele se conserta sozinho e, tao
+# importante quanto, deixa registrado no log que isso aconteceu.
+HEALTH_CHECK_SECONDS = 30
+HEARTBEAT_EVERY_CHECKS = 40   # ~20 min entre linhas de "ainda vivo"
+
+_health_thread = None
+
+
+def _health_loop():
+    checks = 0
+    while not _shutdown_started.is_set():
+        # wait() em vez de sleep(): o encerramento nao espera 30s por isto.
+        if _shutdown_started.wait(HEALTH_CHECK_SECONDS):
+            return
+        checks += 1
+        try:
+            if _hotkey_backend == "win32" and hotkey_manager is not None:
+                inactive = hotkey_manager.inactive_specs()
+                if inactive:
+                    log(f"Atalhos inativos detectados ({', '.join(inactive)}); "
+                        f"tentando registrar de novo")
+                    register_hotkeys()
+            if checks % HEARTBEAT_EVERY_CHECKS == 0:
+                log(f"Heartbeat: atalhos={_hotkey_backend}, gravando={is_recording}, "
+                    f"transcrevendo={is_transcribing}")
+        except Exception as e:
+            log(f"Erro no monitor de saude: {e}")
+
+
+def start_health_monitor():
+    global _health_thread
+    if _health_thread is not None and _health_thread.is_alive():
+        return
+    _health_thread = threading.Thread(
+        target=_health_loop, name="soletrando-health", daemon=True)
+    _health_thread.start()
+    log("Monitor de saude dos atalhos iniciado")
 
 
 # =====================================================================
@@ -1468,8 +1919,6 @@ def main():
     log(f"  Dados         = {DATA_DIR}")
     log("=" * 55)
 
-    register_hotkeys()
-
     tray_icon = pystray.Icon(
         name="SOLetrando",
         icon=load_icon("idle"),
@@ -1477,9 +1926,20 @@ def main():
         menu=build_menu(),
     )
 
+    def on_tray_ready(icon):
+        """Roda numa thread do pystray, ja com o icone na bandeja.
+
+        Registrar os atalhos aqui (e nao antes) e o que faz um erro de
+        registro virar um balao visivel: notify() so aparece depois que o
+        icone existe. Antes, um atalho recusado pelo Windows so deixava
+        rastro no log."""
+        icon.visible = True
+        log("Tray icon ativo")
+        register_hotkeys()
+        start_health_monitor()
+
     close_splash()
-    log("Tray icon ativo")
-    tray_icon.run()
+    tray_icon.run(setup=on_tray_ready)
     log("Loop do tray encerrado")
 
 
