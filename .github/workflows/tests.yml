@@ -1,0 +1,23 @@
+name: Testes
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  testes-python:
+    runs-on: windows-latest
+    steps:
+      - name: Obter codigo
+        uses: actions/checkout@v4
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - name: Validar sintaxe
+        run: python -m py_compile soletrando.py update.py install.py
+      - name: Executar testes
+        run: python -m unittest discover -s tests -v

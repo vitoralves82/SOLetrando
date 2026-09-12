@@ -9,6 +9,7 @@ import shutil
 import tempfile
 import zipfile
 from pathlib import Path
+from pathlib import PurePosixPath
 from urllib.request import urlopen, Request
 from urllib.error import URLError
 
@@ -16,6 +17,8 @@ REPO = "vitoralves82/SOLetrando"
 API_URL = f"https://api.github.com/repos/{REPO}/releases/latest"
 VERSION_FILE = "version.txt"
 USER_AGENT = "SOLetrando-Updater"
+MAX_ARCHIVE_FILES = 10_000
+MAX_ARCHIVE_SIZE = 2 * 1024 * 1024 * 1024
 
 
 def get_script_dir():
@@ -60,6 +63,51 @@ def get_latest_release():
     return tag, zip_url, body
 
 
+def _safe_member_path(member_name):
+    """Normaliza um nome do ZIP e rejeita caminhos fora do destino."""
+    normalized = member_name.replace("\\", "/")
+    path = PurePosixPath(normalized)
+    if path.is_absolute() or path.anchor or ".." in path.parts:
+        raise ValueError(f"Caminho inseguro no ZIP: {member_name}")
+    if not path.parts or any(part in ("", ".") for part in path.parts):
+        raise ValueError(f"Caminho invalido no ZIP: {member_name}")
+    if ":" in path.parts[0]:
+        raise ValueError(f"Caminho absoluto do Windows no ZIP: {member_name}")
+    return Path(*path.parts)
+
+
+def safe_extract_archive(zf, extract_dir):
+    """Extrai um ZIP sem permitir traversal, links ou volume excessivo."""
+    members = zf.infolist()
+    if len(members) > MAX_ARCHIVE_FILES:
+        raise ValueError("ZIP contem arquivos demais")
+
+    total_size = sum(member.file_size for member in members)
+    if total_size > MAX_ARCHIVE_SIZE:
+        raise ValueError("ZIP descompactado excede o limite de 2 GB")
+
+    extract_root = extract_dir.resolve()
+    for member in members:
+        relative = _safe_member_path(member.filename)
+        target = (extract_root / relative).resolve()
+        if target != extract_root and extract_root not in target.parents:
+            raise ValueError(f"Arquivo escaparia do destino: {member.filename}")
+
+        # Bits superiores de external_attr guardam o modo Unix. Links
+        # simbolicos nao sao necessarios no pacote e podem apontar para fora.
+        file_type = (member.external_attr >> 16) & 0o170000
+        if file_type == 0o120000:
+            raise ValueError(f"Link simbolico nao permitido: {member.filename}")
+
+        if member.is_dir():
+            target.mkdir(parents=True, exist_ok=True)
+            continue
+
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with zf.open(member, "r") as source, target.open("wb") as destination:
+            shutil.copyfileobj(source, destination)
+
+
 def download_and_extract(zip_url, dest_dir):
     print("[*] Baixando atualizacao...")
     req = Request(zip_url, headers={"User-Agent": USER_AGENT})
@@ -90,8 +138,8 @@ def download_and_extract(zip_url, dest_dir):
     try:
         extract_dir = tmp / "extracted"
         with zipfile.ZipFile(zip_path, "r") as zf:
-            zf.extractall(extract_dir)
-    except (zipfile.BadZipFile, OSError) as e:
+            safe_extract_archive(zf, extract_dir)
+    except (zipfile.BadZipFile, OSError, ValueError) as e:
         print(f"[ERRO] Arquivo de atualizacao invalido: {e}")
         shutil.rmtree(tmp, ignore_errors=True)
         return False
