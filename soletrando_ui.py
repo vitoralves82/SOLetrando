@@ -6,12 +6,12 @@ import time
 
 
 COLORS = {
-    "idle": ("#E9F5F1", "#005847"),
-    "recording": ("#E8F7EE", "#147D3F"),
-    "transcribing": ("#FFF4E8", "#B85B0B"),
-    "done": ("#E9F5F1", "#005847"),
+    "idle": ("#F7F8FA", "#D59B00"),
+    "recording": ("#EAF2FF", "#2563EB"),
+    "transcribing": ("#FFF4CC", "#A66B00"),
+    "done": ("#EEF2F7", "#334155"),
     "error": ("#FDECEC", "#A12622"),
-    "preview": ("#F2F7F5", "#005847"),
+    "preview": ("#F7F8FA", "#D59B00"),
 }
 
 
@@ -53,25 +53,24 @@ class StatusOverlay:
     def _run(self):
         try:
             import tkinter as tk
-            from tkinter import ttk
 
             root = tk.Tk()
             root.withdraw()
             root.overrideredirect(True)
             root.attributes("-topmost", True)
-            root.configure(bg="#E9F5F1")
+            root.configure(bg="#F7F8FA")
 
-            frame = tk.Frame(root, bg="#E9F5F1", padx=10, pady=6)
+            frame = tk.Frame(root, bg="#F7F8FA", padx=10, pady=6)
             frame.pack(fill="both", expand=True)
-            header = tk.Frame(frame, bg="#E9F5F1")
+            header = tk.Frame(frame, bg="#F7F8FA")
             header.pack(fill="x")
             badge = tk.Canvas(
-                header, width=16, height=16, bg="#E9F5F1",
+                header, width=16, height=16, bg="#F7F8FA",
                 highlightthickness=0, borderwidth=0,
             )
             badge.pack(side="left", padx=(0, 6))
             badge_circle = badge.create_oval(
-                1, 1, 15, 15, fill="#005847", outline=""
+                1, 1, 15, 15, fill="#D59B00", outline=""
             )
             badge.create_text(
                 8, 8, text="S", fill="#FFFFFF",
@@ -79,32 +78,42 @@ class StatusOverlay:
             )
             title = tk.Label(
                 header, text="SOLetrando", font=("Segoe UI Semibold", 10),
-                bg="#E9F5F1", fg="#005847", anchor="w", cursor="fleur",
+                bg="#F7F8FA", fg="#111827", anchor="w", cursor="fleur",
             )
             title.pack(side="left", fill="x", expand=True)
             close_button = tk.Button(
-                header, text="×", font=("Segoe UI", 10), bg="#E9F5F1",
-                fg="#74837E", activebackground="#E9F5F1",
-                activeforeground="#20332E", relief="flat", borderwidth=0,
+                header, text="×", font=("Segoe UI", 10), bg="#F7F8FA",
+                fg="#7C8491", activebackground="#F7F8FA",
+                activeforeground="#111827", relief="flat", borderwidth=0,
                 highlightthickness=0, padx=3, pady=0, takefocus=0,
             )
             close_button.pack(side="right")
 
-            text_frame = tk.Frame(frame, bg="#E9F5F1")
+            text_frame = tk.Frame(frame, bg="#F7F8FA")
             text_frame.pack(fill="both", expand=True, pady=(4, 0))
             detail = tk.Text(
-                text_frame, font=("Segoe UI", 10), bg="#E9F5F1",
-                fg="#20332E", wrap="word", relief="flat", borderwidth=0,
+                text_frame, font=("Segoe UI", 10), bg="#F7F8FA",
+                fg="#1F2937", wrap="word", relief="flat", borderwidth=0,
                 highlightthickness=0, padx=0, pady=0, cursor="arrow",
                 width=1, height=1, takefocus=0,
             )
-            scrollbar = ttk.Scrollbar(
-                text_frame, orient="vertical", command=detail.yview
+            scrollbar = tk.Scrollbar(
+                text_frame, orient="vertical", command=detail.yview,
+                width=12, relief="flat", borderwidth=0,
+                background="#F2BC2E", activebackground="#D59B00",
+                troughcolor="#D9DEE7", highlightthickness=0,
             )
             detail.configure(yscrollcommand=scrollbar.set)
             detail.pack(side="left", fill="both", expand=True)
             scrollbar.pack(side="right", fill="y", padx=(8, 0))
             detail.configure(state="disabled")
+
+            def scroll_detail(event):
+                detail.yview_scroll(int(-event.delta / 120), "units")
+                return "break"
+
+            detail.bind("<MouseWheel>", scroll_detail)
+            scrollbar.bind("<MouseWheel>", scroll_detail)
 
             drag_origin = {"x": 0, "y": 0}
 
@@ -125,9 +134,39 @@ class StatusOverlay:
             # configuracoes representem aproximadamente pixels reais na tela.
             dpi_scale = max(1.0, root.winfo_fpixels("1i") / 96.0)
 
+            compact_mode = False
+            current_state = None
+            labels = {
+                "idle": "Pronto",
+                "recording": "Gravando",
+                "transcribing": "Transcrevendo",
+                "done": "Texto pronto",
+                "error": "Atenção necessária",
+                "preview": "Prévia de tamanho",
+            }
+
+            def update_title():
+                status = labels.get(current_state, current_state or "Pronto")
+                title.configure(
+                    text=status if compact_mode else f"SOLetrando  •  {status}"
+                )
+
             def place_at_bottom_right(width, height):
-                logical_width = max(150, round(width / dpi_scale))
-                logical_height = max(55, round(height / dpi_scale))
+                nonlocal compact_mode
+                logical_width = max(80, round(width / dpi_scale))
+                logical_height = max(28, round(height / dpi_scale))
+                new_compact_mode = width < 220 or height < 76
+                if new_compact_mode != compact_mode:
+                    compact_mode = new_compact_mode
+                    if compact_mode:
+                        text_frame.pack_forget()
+                        frame.configure(padx=8, pady=5)
+                    else:
+                        text_frame.pack(
+                            fill="both", expand=True, pady=(4, 0)
+                        )
+                        frame.configure(padx=10, pady=6)
+                    update_title()
                 x = root.winfo_screenwidth() - logical_width - 16
                 y = root.winfo_screenheight() - logical_height - 48
                 root.geometry(
@@ -136,7 +175,6 @@ class StatusOverlay:
 
             place_at_bottom_right(self._width, self._height)
             hide_deadline = None
-            current_state = None
             dismissed = False
 
             window_handle = None
@@ -243,23 +281,13 @@ class StatusOverlay:
                             dismissed = False
                         current_state = state
                         background, accent = COLORS.get(state, COLORS["idle"])
-                        labels = {
-                            "idle": "Pronto para ditar",
-                            "recording": "Gravando",
-                            "transcribing": "Transcrevendo",
-                            "done": "Texto pronto",
-                            "error": "Atenção necessária",
-                            "preview": "Prévia de tamanho",
-                        }
                         frame.configure(bg=background)
                         header.configure(bg=background)
                         badge.configure(bg=background)
                         badge.itemconfigure(badge_circle, fill=accent)
                         text_frame.configure(bg=background)
-                        title.configure(
-                            text=f"SOLetrando  •  {labels.get(state, state)}",
-                            bg=background, fg=accent,
-                        )
+                        update_title()
+                        title.configure(bg=background, fg=accent)
                         close_button.configure(
                             bg=background, activebackground=background
                         )
@@ -293,18 +321,25 @@ _settings_lock = threading.Lock()
 _settings_open = False
 
 
+def _find_asset(filename):
+    """Localiza recursos no codigo-fonte e nas pastas geradas pelo PyInstaller."""
+    import sys
+    from pathlib import Path
+
+    candidates = [Path(sys.executable).parent / filename]
+    bundle_dir = getattr(sys, "_MEIPASS", None)
+    if bundle_dir:
+        candidates.append(Path(bundle_dir) / filename)
+    candidates.append(Path(__file__).parent / filename)
+    return next((path for path in candidates if path.exists()), None)
+
+
 def _set_window_icon(root):
     """Aplica o icone oficial tanto no codigo-fonte quanto no executavel."""
     try:
-        import sys
-        from pathlib import Path
-
-        candidates = [Path(sys.executable).parent / "soletrando.ico"]
-        candidates.append(Path(__file__).parent / "soletrando.ico")
-        for icon_path in candidates:
-            if icon_path.exists():
-                root.iconbitmap(default=str(icon_path))
-                return
+        icon_path = _find_asset("soletrando.ico")
+        if icon_path:
+            root.iconbitmap(default=str(icon_path))
     except Exception:
         pass
 
@@ -344,53 +379,116 @@ def show_settings_window(config, on_save, model_options=None, actions=None):
             root = tk.Tk()
             root.title("Configurações do SOLetrando")
             root.geometry("760x650")
-            root.minsize(680, 590)
-            root.configure(bg="#F4F7F6")
+            root.minsize(640, 500)
+            root.configure(bg="#F5F6F8")
             _set_window_icon(root)
+
+            background = "#F5F6F8"
+            surface = "#FFFFFF"
+            ink = "#111827"
+            muted = "#667085"
+            amber = "#F2BC2E"
+            amber_dark = "#D59B00"
+            border = "#D9DEE7"
 
             style = ttk.Style(root)
             try:
                 style.theme_use("clam")
             except tk.TclError:
                 pass
-            style.configure("TFrame", background="#FFFFFF")
-            style.configure("TLabel", background="#FFFFFF", foreground="#20332E")
+            style.configure("TFrame", background=surface)
+            style.configure("TLabel", background=surface, foreground=ink)
             style.configure(
-                "TCheckbutton", background="#FFFFFF", foreground="#20332E"
+                "TCheckbutton", background=surface, foreground=ink
             )
             style.map(
-                "TCheckbutton", background=[("active", "#FFFFFF")]
+                "TCheckbutton", background=[("active", surface)]
             )
-            style.configure("TNotebook", background="#F4F7F6", borderwidth=0)
+            style.configure("TNotebook", background=background, borderwidth=0)
             style.configure(
-                "TNotebook.Tab", padding=(16, 8), background="#E5ECE9",
-                foreground="#31443E",
+                "TNotebook.Tab", padding=(16, 8), background="#E7EAF0",
+                foreground="#344054",
             )
             style.map(
                 "TNotebook.Tab",
-                background=[("selected", "#005847")],
-                foreground=[("selected", "#FFFFFF")],
+                background=[("selected", amber)],
+                foreground=[("selected", ink)],
             )
             style.configure(
-                "Accent.TButton", background="#005847", foreground="#FFFFFF",
+                "Accent.TButton", background=amber, foreground=ink,
                 padding=(16, 7), borderwidth=0,
             )
             style.map(
-                "Accent.TButton", background=[("active", "#00705A")]
+                "Accent.TButton", background=[("active", amber_dark)]
             )
 
-            tk.Frame(root, bg="#E07D28", height=4).pack(fill="x")
-            container = tk.Frame(root, bg="#F4F7F6", padx=24, pady=18)
-            container.pack(fill="both", expand=True)
+            tk.Frame(root, bg=ink, height=6).pack(fill="x")
+            shell = tk.Frame(root, bg=background)
+            shell.pack(fill="both", expand=True)
+            settings_canvas = tk.Canvas(
+                shell, bg=background, highlightthickness=0, borderwidth=0
+            )
+            settings_scrollbar = tk.Scrollbar(
+                shell, orient="vertical", command=settings_canvas.yview,
+                width=14, relief="flat", borderwidth=0,
+                background=amber, activebackground=amber_dark,
+                troughcolor=border, highlightthickness=0,
+            )
+            settings_canvas.configure(yscrollcommand=settings_scrollbar.set)
+            settings_scrollbar.pack(side="right", fill="y")
+            settings_canvas.pack(side="left", fill="both", expand=True)
+
+            container = tk.Frame(
+                settings_canvas, bg=background, padx=24, pady=18
+            )
+            container_window = settings_canvas.create_window(
+                (0, 0), window=container, anchor="nw"
+            )
+
+            def update_scroll_region(_event=None):
+                settings_canvas.configure(scrollregion=settings_canvas.bbox("all"))
+
+            def fit_container_width(event):
+                settings_canvas.itemconfigure(container_window, width=event.width)
+
+            container.bind("<Configure>", update_scroll_region)
+            settings_canvas.bind("<Configure>", fit_container_width)
+
+            def scroll_settings(event):
+                if event.widget.winfo_class() in {"Text", "TCombobox", "TSpinbox"}:
+                    return None
+                settings_canvas.yview_scroll(int(-event.delta / 120), "units")
+                return "break"
+
+            root.bind("<MouseWheel>", scroll_settings)
+
+            brand = tk.Frame(container, bg=background)
+            brand.pack(fill="x", pady=(0, 14))
+            try:
+                from PIL import Image, ImageTk
+
+                icon_path = _find_asset("icon_idle.png")
+                if icon_path:
+                    icon_image = Image.open(icon_path).convert("RGB")
+                    icon_image = icon_image.resize((46, 46), Image.Resampling.LANCZOS)
+                    root._soletrando_header_icon = ImageTk.PhotoImage(icon_image)
+                    tk.Label(
+                        brand, image=root._soletrando_header_icon,
+                        bg=background, borderwidth=0,
+                    ).pack(side="left", padx=(0, 12))
+            except Exception:
+                pass
+            brand_text = tk.Frame(brand, bg=background)
+            brand_text.pack(side="left", fill="x", expand=True)
             tk.Label(
-                container, text="SOLetrando", font=("Segoe UI Semibold", 19),
-                bg="#F4F7F6", fg="#005847", anchor="w",
+                brand_text, text="SOLetrando", font=("Segoe UI Semibold", 19),
+                bg=background, fg=ink, anchor="w",
             ).pack(fill="x")
             tk.Label(
-                container,
+                brand_text,
                 text="Personalize o ditado, consulte a ajuda e acesse o diagnóstico.",
-                font=("Segoe UI", 10), bg="#F4F7F6", fg="#40544E", anchor="w",
-            ).pack(fill="x", pady=(2, 14))
+                font=("Segoe UI", 10), bg=background, fg=muted, anchor="w",
+            ).pack(fill="x", pady=(2, 0))
 
             notebook = ttk.Notebook(container)
             notebook.pack(fill="both", expand=True)
@@ -467,7 +565,7 @@ def show_settings_window(config, on_save, model_options=None, actions=None):
             ttk.Label(
                 general_tab,
                 text="A troca é aplicada após salvar e pode levar alguns segundos.",
-                foreground="#60716C",
+                foreground=muted,
             ).grid(row=2, column=0, columnspan=2, sticky="w", pady=(0, 18))
 
             ttk.Separator(general_tab).grid(
@@ -481,20 +579,23 @@ def show_settings_window(config, on_save, model_options=None, actions=None):
                 row=5, column=0, sticky="w", pady=(12, 4)
             )
             ttk.Spinbox(
-                general_tab, from_=220, to=1000, increment=20,
+                general_tab, from_=120, to=1000, increment=20,
                 textvariable=width_var, width=12,
             ).grid(row=5, column=1, sticky="w", pady=(12, 4))
             ttk.Label(general_tab, text="Altura em pixels").grid(
                 row=6, column=0, sticky="w", pady=4
             )
             ttk.Spinbox(
-                general_tab, from_=76, to=600, increment=10,
+                general_tab, from_=44, to=600, increment=8,
                 textvariable=height_var, width=12,
             ).grid(row=6, column=1, sticky="w", pady=4)
             ttk.Label(
                 general_tab,
-                text="Faixas permitidas: 220–1000 px de largura e 76–600 px de altura.",
-                foreground="#60716C",
+                text=(
+                    "Faixas permitidas: 120–1000 px de largura e 44–600 px de altura. "
+                    "Abaixo de 220 × 76 px, a caixa mostra apenas o estado."
+                ),
+                foreground=muted,
             ).grid(row=7, column=0, columnspan=2, sticky="w", pady=(2, 14))
             ttk.Label(general_tab, text="Ocultar durante a gravação").grid(
                 row=8, column=0, sticky="w", pady=4
@@ -537,7 +638,7 @@ def show_settings_window(config, on_save, model_options=None, actions=None):
                         height = int(height_var.get())
                     except ValueError:
                         return
-                    if 220 <= width <= 1000 and 76 <= height <= 600:
+                    if 120 <= width <= 1000 and 44 <= height <= 600:
                         callback = actions.get("preview_overlay")
                         if callback:
                             callback(width, height)
@@ -555,7 +656,7 @@ def show_settings_window(config, on_save, model_options=None, actions=None):
             ttk.Label(
                 vocabulary_tab,
                 text="Um termo por linha. Exemplo: EnvironPact, PROCLIM, Camarupim.",
-                foreground="#60716C",
+                foreground=muted,
             ).pack(fill="x", pady=(2, 5))
             vocabulary = scrolledtext.ScrolledText(
                 vocabulary_tab, height=7, font=("Segoe UI", 10), wrap="word",
@@ -570,7 +671,7 @@ def show_settings_window(config, on_save, model_options=None, actions=None):
             ).pack(fill="x", pady=(14, 0))
             ttk.Label(
                 vocabulary_tab, text="Uma por linha: texto ouvido = texto correto.",
-                foreground="#60716C",
+                foreground=muted,
             ).pack(fill="x", pady=(2, 5))
             corrections = scrolledtext.ScrolledText(
                 vocabulary_tab, height=7, font=("Segoe UI", 10), wrap="word",
@@ -610,7 +711,7 @@ def show_settings_window(config, on_save, model_options=None, actions=None):
             )
             guide_text = scrolledtext.ScrolledText(
                 help_tab, font=("Segoe UI", 10), wrap="word", relief="flat",
-                background="#FFFFFF", padx=12, pady=10,
+                background=surface, foreground=ink, padx=12, pady=10,
             )
             guide_text.pack(fill="both", expand=True)
             guide_text.insert("1.0", guide)
@@ -623,7 +724,7 @@ def show_settings_window(config, on_save, model_options=None, actions=None):
             ttk.Label(
                 tools_tab,
                 text="Use estas opções para consultar dados locais ou remover o aplicativo.",
-                foreground="#60716C",
+                foreground=muted,
             ).pack(anchor="w", pady=(2, 16))
 
             def action_button(label, action_name):
@@ -642,7 +743,7 @@ def show_settings_window(config, on_save, model_options=None, actions=None):
             ttk.Separator(tools_tab).pack(fill="x", pady=16)
             action_button("Desinstalar SOLetrando...", "uninstall")
 
-            buttons = tk.Frame(container, bg="#F4F7F6")
+            buttons = tk.Frame(container, bg=background)
             buttons.pack(fill="x", pady=(14, 0))
 
             def cancel():
@@ -656,9 +757,9 @@ def show_settings_window(config, on_save, model_options=None, actions=None):
                     parsed = parse_corrections(corrections.get("1.0", "end"))
                     width = int(width_var.get())
                     height = int(height_var.get())
-                    if not 220 <= width <= 1000 or not 76 <= height <= 600:
+                    if not 120 <= width <= 1000 or not 44 <= height <= 600:
                         raise ValueError(
-                            "Use largura entre 220 e 1000 e altura entre 76 e 600."
+                            "Use largura entre 120 e 1000 e altura entre 44 e 600."
                         )
                 except ValueError as error:
                     messagebox.showerror(

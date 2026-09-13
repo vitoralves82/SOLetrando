@@ -291,8 +291,8 @@ def sanitize_config(cfg):
         if not isinstance(normalized.get(key), bool):
             normalized[key] = DEFAULT_CONFIG[key]
     for key, minimum, maximum in (
-        ("overlay_width", 220, 1000),
-        ("overlay_height", 76, 600),
+        ("overlay_width", 120, 1000),
+        ("overlay_height", 44, 600),
     ):
         try:
             normalized[key] = max(minimum, min(maximum, int(normalized[key])))
@@ -666,11 +666,11 @@ LIVE_PREVIEW_MAX_SECONDS = 20
 # TRAY ICON
 # =====================================================================
 COLOR_IDLE = "#FFC107"        # amarelo, igual ao icon_idle.png
-COLOR_REC = "#00C853"         # verde, igual ao icon_recording.png
-COLOR_TRANSCRIBING = "#FF0000"  # vermelho, igual ao icon_transcribing.png
+COLOR_REC = "#2563EB"         # azul, igual ao icon_recording.png
+COLOR_TRANSCRIBING = "#F2BC2E"  # ambar, igual ao icon_transcribing.png
 
 # Tempo minimo que um estado fica visivel na bandeja. Com o turbo + colagem
-# por Ctrl+V a transcricao ficou tao rapida que o icone vermelho piscava por
+# por Ctrl+V a transcricao ficou tao rapida que o icone ambar piscava por
 # poucos milissegundos e passava despercebido.
 MIN_STATE_VISIBLE_SECONDS = 0.6
 
@@ -743,7 +743,7 @@ def load_icon(state):
             log(f"Erro ao carregar icone {state} em {base}: {e}")
 
     if img is None:
-        # Fallback com as MESMAS cores dos PNGs (amarelo/verde/vermelho), para
+        # Fallback com as MESMAS cores dos PNGs (amarelo/azul/ambar), para
         # que o feedback visual continue correto mesmo sem os arquivos.
         log(f"Icone '{filename}' nao encontrado, usando icone gerado para '{state}'")
         colors = {"idle": COLOR_IDLE, "recording": COLOR_REC, "transcribing": COLOR_TRANSCRIBING}
@@ -763,8 +763,8 @@ def idle_title():
 _tray_state = None
 
 
-def update_tray(state, extra=None):
-    """Troca o icone da bandeja: amarelo=parado, verde=gravando, vermelho=transcrevendo."""
+def update_tray(state, extra=None, overlay_detail=None):
+    """Troca o icone da bandeja: amarelo=parado, azul=gravando, ambar=transcrevendo."""
     global _tray_state
 
     if tray_icon is None:
@@ -795,7 +795,8 @@ def update_tray(state, extra=None):
             )
         elif state == "transcribing":
             status_overlay.set_state(
-                "transcribing", extra or "Preparando o texto final..."
+                "transcribing",
+                overlay_detail or "Preparando o texto final...",
             )
         else:
             status_overlay.set_state(
@@ -1747,7 +1748,7 @@ def stop_and_transcribe():
             log("Nenhum audio capturado")
             return
 
-        update_tray("transcribing")
+        update_tray("transcribing", overlay_detail=preview_fallback)
         transcribe_started_at = time.monotonic()
         log("Transcrevendo...")
 
@@ -1836,7 +1837,7 @@ def stop_and_transcribe():
     finally:
         with state_lock:
             _preview_text_by_session.pop(recording_session, None)
-        # Segura o icone vermelho pelo tempo minimo antes de voltar ao amarelo.
+        # Segura o icone ambar pelo tempo minimo antes de voltar ao amarelo.
         # A espera acontece com is_transcribing ainda True, entao um toggle
         # nesse intervalo e ignorado (e registrado) em vez de disputar o estado.
         if transcribe_started_at is not None:
@@ -1845,7 +1846,7 @@ def stop_and_transcribe():
                 time.sleep(restante)
         with state_lock:
             is_transcribing = False
-            # Se o usuario ja comecou outra gravacao, nao sobrescreve o verde.
+            # Se o usuario ja comecou outra gravacao, nao sobrescreve o azul.
             if not is_recording:
                 update_tray("idle")
                 if completed_text:

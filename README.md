@@ -19,7 +19,7 @@ Pressione **ScrollLock**, fale, pressione novamente. O texto aparece onde estive
 ## Funcionalidades
 
 - **100% local** — sem nuvem, sem assinatura, sem limites
-- **Ícone na bandeja do sistema** com indicadores de cor (cinza=ocioso, verde=gravando, amarelo=transcrevendo)
+- **Ícone na bandeja do sistema** com indicadores de cor (amarelo=ocioso, azul=gravando, âmbar=transcrevendo)
 - **Indicador flutuante rolável** com botão discreto para fechar
 - **Prévia integral durante o ditado** com tamanho e duração configuráveis
 - **Vocabulário e correções pessoais** para nomes, siglas e termos recorrentes
@@ -233,9 +233,11 @@ Clique com o botão direito no ícone "S" na bandeja do sistema:
 
 Dentro de **Configurações**, a aba **Diagnóstico** reúne o registro técnico, o
 histórico, a pasta de dados e a desinstalação. A aba **Como usar** contém um guia
-rápido. A caixa de prévia possui barra de rolagem e pode ser arrastada pelo título.
-As dimensões são demonstradas ao vivo durante o ajuste. Também é possível definir
-quando a caixa desaparece e fechá-la imediatamente pelo botão ×.
+rápido. A caixa de prévia possui barra de rolagem sempre visível e pode ser
+arrastada pelo título. As dimensões são demonstradas ao vivo durante o ajuste.
+O intervalo permitido é de 120 × 44 a 1000 × 600 pixels. Abaixo de 220 × 76
+pixels, ela se torna um indicador compacto e mostra somente o estado. Também é
+possível definir quando a caixa desaparece e fechá-la imediatamente pelo botão ×.
 
 ---
 
@@ -526,9 +528,11 @@ Right-click the "S" icon in the system tray:
 
 Under **Configurações**, the **Diagnóstico** tab contains the technical log,
 dictation history, data folder, and uninstall action. **Como usar** provides a
-short guide. The preview has a scrollbar and can be dragged by its title.
-Its size is shown live while editing. Users can control when it disappears or
-close it immediately with the × button.
+short guide. The preview has an always-visible scrollbar and can be dragged by
+its title. Its size is shown live while editing. The allowed range is 120 × 44
+to 1000 × 600 pixels. Below 220 × 76 pixels, it becomes a compact status-only
+indicator. Users can control when it disappears or close it immediately with
+the × button.
 
 ---
 
