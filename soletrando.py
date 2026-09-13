@@ -22,6 +22,14 @@ import unicodedata
 from pathlib import Path
 from datetime import datetime
 
+from soletrando_text import (
+    apply_corrections,
+    build_initial_prompt,
+    normalize_corrections,
+    normalize_vocabulary,
+)
+from soletrando_ui import StatusOverlay, show_settings_window
+
 IS_WINDOWS = os.name == "nt"
 
 # =====================================================================
@@ -109,6 +117,8 @@ MODELS_DIR.mkdir(parents=True, exist_ok=True)
 
 LOG_PATH = DATA_DIR / "soletrando.log"
 CONFIG_PATH = DATA_DIR / "soletrando_config.json"
+LAST_TRANSCRIPT_PATH = DATA_DIR / "ultimo_ditado.txt"
+HISTORY_PATH = DATA_DIR / "historico_ditados.txt"
 HAS_CONSOLE = sys.stdout is not None and hasattr(sys.stdout, "write")
 
 LOG_MAX_BYTES = 1024 * 1024  # 1 MB antes de rotacionar
@@ -176,6 +186,16 @@ DEFAULT_CONFIG = {
     # "paste" = Ctrl+V (instantaneo, unicode perfeito)
     # "type"  = simula digitacao tecla a tecla (compativel com terminais)
     "insert_mode": "paste",
+    # Termos que ajudam o modelo e substituicoes aplicadas ao resultado final.
+    "vocabulary": [],
+    "corrections": {},
+    # A previa fica somente na janela flutuante. O campo de destino recebe o
+    # texto final uma unica vez, evitando duplicacoes durante o reconhecimento.
+    "live_preview_enabled": True,
+    "save_history": True,
+    # Texto integral pode conter informacao sensivel; o registro tecnico guarda
+    # apenas tamanho e desempenho por padrao.
+    "log_transcripts": False,
 }
 
 # Opcoes de hotkey disponiveis no menu
@@ -248,6 +268,11 @@ def sanitize_config(cfg):
         normalized["beep_enabled"] = DEFAULT_CONFIG["beep_enabled"]
     if normalized.get("insert_mode") not in VALID_INSERT_MODES:
         normalized["insert_mode"] = DEFAULT_CONFIG["insert_mode"]
+    normalized["vocabulary"] = normalize_vocabulary(normalized.get("vocabulary"))
+    normalized["corrections"] = normalize_corrections(normalized.get("corrections"))
+    for key in ("live_preview_enabled", "save_history", "log_transcripts"):
+        if not isinstance(normalized.get(key), bool):
+            normalized[key] = DEFAULT_CONFIG[key]
     return normalized
 
 
@@ -592,6 +617,10 @@ current_hotkey_toggle = None
 current_hotkey_quit = None
 recording_session = 0      # identifica cada gravacao (usado pelo watchdog)
 watchdog_timer = None      # cancelado ao parar (antes vazava 1 thread/gravacao)
+status_overlay = StatusOverlay()
+_preview_thread = None
+LIVE_PREVIEW_INTERVAL_SECONDS = 2.0
+LIVE_PREVIEW_MAX_SECONDS = 20
 
 
 # =====================================================================
@@ -719,6 +748,19 @@ def update_tray(state, extra=None):
         if state != _tray_state:
             log(f"Icone da bandeja -> {state}")
             _tray_state = state
+
+        if state == "recording":
+            status_overlay.set_state(
+                "recording", "Fale normalmente. Pressione o atalho para concluir."
+            )
+        elif state == "transcribing":
+            status_overlay.set_state(
+                "transcribing", extra or "Preparando o texto final..."
+            )
+        else:
+            status_overlay.set_state(
+                "idle", extra or "Atalho ativo e microfone disponível.", hide_after=1.4
+            )
     except Exception as e:
         log(f"Erro ao atualizar tray ({state}): {e}")
 
@@ -1090,6 +1132,7 @@ def register_hotkeys():
                 log(f"Atalho nao registrado: {msg}.")
                 if msg not in _notified_hotkey_problems:
                     notify(f"Atencao: {msg}.")
+                    status_overlay.set_state("error", msg)
             _notified_hotkey_problems = problems
             if not problems:
                 log(f"Hotkeys ativas via RegisterHotKey: "
@@ -1243,6 +1286,62 @@ def _watchdog_stop(session):
     threading.Thread(target=stop_and_transcribe, daemon=True).start()
 
 
+def _live_preview_loop(session):
+    """Atualiza a janela flutuante com uma transcricao parcial curta."""
+    while not _shutdown_started.is_set():
+        if _shutdown_started.wait(LIVE_PREVIEW_INTERVAL_SECONDS):
+            return
+        with state_lock:
+            if not is_recording or session != recording_session:
+                return
+            frames = list(audio_frames)
+
+        if not frames or not model_lock.acquire(timeout=0.1):
+            continue
+        try:
+            audio_data = np.concatenate(frames, axis=0).flatten().astype(np.float32)
+            max_samples = SAMPLE_RATE * LIVE_PREVIEW_MAX_SECONDS
+            if audio_data.size > max_samples:
+                audio_data = audio_data[-max_samples:]
+            if audio_data.size < SAMPLE_RATE:
+                continue
+            rms = float(np.sqrt(np.mean(np.square(audio_data))))
+            if rms < SILENCE_RMS_THRESHOLD:
+                continue
+            segments, _info = model.transcribe(
+                audio_data,
+                language=config["language"] or None,
+                beam_size=1,
+                vad_filter=True,
+                vad_parameters=dict(min_silence_duration_ms=400, speech_pad_ms=150),
+                condition_on_previous_text=False,
+                initial_prompt=build_initial_prompt(config["vocabulary"]),
+            )
+            partial = clean_transcript(
+                " ".join(segment.text.strip() for segment in segments).strip()
+            )
+            if partial:
+                status_overlay.set_state("recording", partial[-280:])
+        except Exception as e:
+            log(f"Falha na previa ao vivo: {e}")
+            return
+        finally:
+            model_lock.release()
+
+
+def start_live_preview(session):
+    global _preview_thread
+    if not config["live_preview_enabled"]:
+        return
+    _preview_thread = threading.Thread(
+        target=_live_preview_loop,
+        args=(session,),
+        name="soletrando-preview",
+        daemon=True,
+    )
+    _preview_thread.start()
+
+
 def start_recording():
     """Deve ser chamado com state_lock adquirido."""
     global is_recording, audio_frames, stream, recording_session, watchdog_timer
@@ -1279,6 +1378,11 @@ def start_recording():
     is_recording = True
     log("REC iniciado")
     update_tray("recording")
+    if config["beep_enabled"]:
+        # O bip confirma que o stream abriu de fato. Antes ele tocava antes da
+        # tentativa e podia sinalizar gravacao mesmo quando o microfone falhava.
+        beep_start()
+    start_live_preview(session)
 
     # Watchdog: para automaticamente se a gravacao for esquecida
     watchdog_timer = threading.Timer(MAX_RECORDING_SECONDS, _watchdog_stop, args=(session,))
@@ -1364,6 +1468,33 @@ def copy_to_clipboard(text):
             user32.CloseClipboard()
         except Exception:
             pass
+
+
+def copy_to_clipboard_reliable(text):
+    """Usa a API nativa e recorre ao PowerShell se outro processo interferir."""
+    if copy_to_clipboard(text):
+        return True
+    if not IS_WINDOWS:
+        return False
+    try:
+        import subprocess
+        result = subprocess.run(
+            [
+                "powershell", "-NoProfile", "-NonInteractive", "-Command",
+                "$value = [Console]::In.ReadToEnd(); Set-Clipboard -Value $value",
+            ],
+            input=text,
+            text=True,
+            capture_output=True,
+            timeout=8,
+        )
+        if result.returncode == 0:
+            log("Texto copiado para clipboard pelo mecanismo alternativo")
+            return True
+        log(f"Mecanismo alternativo do clipboard falhou: {result.stderr.strip()}")
+    except Exception as e:
+        log(f"Erro no mecanismo alternativo do clipboard: {e}")
+    return False
 
 
 # =====================================================================
@@ -1474,6 +1605,29 @@ def clean_transcript(text):
     return text
 
 
+def save_transcript(text):
+    """Mantem o ultimo ditado e, se habilitado, um historico local legivel."""
+    try:
+        temporary = LAST_TRANSCRIPT_PATH.with_suffix(".txt.tmp")
+        temporary.write_text(text, encoding="utf-8")
+        os.replace(temporary, LAST_TRANSCRIPT_PATH)
+    except Exception as e:
+        log(f"Erro ao salvar o ultimo ditado: {e}")
+
+    if not config["save_history"]:
+        return
+    try:
+        if HISTORY_PATH.exists() and HISTORY_PATH.stat().st_size > 2 * 1024 * 1024:
+            backup = HISTORY_PATH.with_suffix(".txt.1")
+            backup.unlink(missing_ok=True)
+            HISTORY_PATH.rename(backup)
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        with HISTORY_PATH.open("a", encoding="utf-8") as history:
+            history.write(f"[{timestamp}] {text}\n")
+    except Exception as e:
+        log(f"Erro ao salvar historico: {e}")
+
+
 # =====================================================================
 # TRANSCREVER
 # =====================================================================
@@ -1485,6 +1639,7 @@ def stop_and_transcribe():
     global is_recording, audio_frames, is_transcribing
 
     transcribe_started_at = None
+    completed_text = None
 
     with state_lock:
         if not is_recording or is_transcribing:
@@ -1560,6 +1715,7 @@ def stop_and_transcribe():
                     # texto anterior como contexto e a principal fonte de
                     # loops e alucinacoes repetidas.
                     condition_on_previous_text=False,
+                    initial_prompt=build_initial_prompt(config["vocabulary"]),
                 )
                 text = " ".join(seg.text.strip() for seg in segments).strip()
             if not config["language"]:
@@ -1574,9 +1730,16 @@ def stop_and_transcribe():
             log("Nenhuma fala detectada")
             return
 
-        log(f"Texto ({len(text)} chars): {text}")
-        clipboard_ok = copy_to_clipboard(text)
+        text = apply_corrections(text, config["corrections"])
+
+        if config["log_transcripts"]:
+            log(f"Texto ({len(text)} chars): {text}")
+        else:
+            log(f"Texto concluido ({len(text)} caracteres)")
+        save_transcript(text)
+        clipboard_ok = copy_to_clipboard_reliable(text)
         insert_text(text, clipboard_ok)
+        completed_text = text
     except Exception as e:
         log(f"Erro inesperado na transcricao: {e}")
     finally:
@@ -1592,6 +1755,10 @@ def stop_and_transcribe():
             # Se o usuario ja comecou outra gravacao, nao sobrescreve o verde.
             if not is_recording:
                 update_tray("idle")
+                if completed_text:
+                    status_overlay.set_state(
+                        "done", completed_text[-280:], hide_after=4.0
+                    )
 
 
 # =====================================================================
@@ -1619,8 +1786,6 @@ def toggle():
                 return
 
             if not is_recording:
-                if config["beep_enabled"]:
-                    beep_start()
                 start_recording()
                 return
 
@@ -1687,6 +1852,58 @@ def change_insert_mode(mode_key):
     log(f"Modo de insercao alterado para '{mode_key}'")
 
 
+def _save_settings(values):
+    """Recebe somente os campos editaveis da janela de configuracoes."""
+    allowed = {
+        "vocabulary", "corrections", "live_preview_enabled",
+        "save_history", "log_transcripts",
+    }
+    for key in allowed:
+        if key in values:
+            config[key] = values[key]
+    sanitized = sanitize_config(config)
+    config.clear()
+    config.update(sanitized)
+    save_config(config)
+    rebuild_menu()
+    status_overlay.set_state(
+        "done", "Configurações salvas.", hide_after=2.5
+    )
+    log("Configuracoes de vocabulario e historico atualizadas")
+
+
+def on_open_settings(icon, item):
+    if not show_settings_window(config, _save_settings):
+        notify("A janela de configuracoes ja esta aberta.")
+
+
+def on_copy_last_transcript(icon, item):
+    try:
+        text = LAST_TRANSCRIPT_PATH.read_text(encoding="utf-8").strip()
+    except OSError:
+        text = ""
+    if not text:
+        notify("Ainda nao ha um ditado salvo.")
+        return
+    if copy_to_clipboard_reliable(text):
+        notify("Ultimo ditado copiado. Use Ctrl+V onde quiser.")
+        status_overlay.set_state(
+            "done", "Último ditado copiado para a área de transferência.",
+            hide_after=2.5,
+        )
+    else:
+        status_overlay.set_state(
+            "error", "Não foi possível copiar o último ditado."
+        )
+
+
+def on_open_history(icon, item):
+    if not HISTORY_PATH.exists():
+        notify("Ainda nao ha historico para exibir.")
+        return
+    _open_path(HISTORY_PATH)
+
+
 # =====================================================================
 # SHUTDOWN
 # =====================================================================
@@ -1721,6 +1938,7 @@ def _do_shutdown():
             tray_icon.stop()
         except Exception:
             pass
+    status_overlay.stop()
 
     # Rede de seguranca: se o loop do pystray nao encerrar (ja aconteceu com
     # o tray "fantasma" preso no Explorer), forca a saida do processo.
@@ -1755,8 +1973,9 @@ def on_tray_quit(icon, item):
 # de mensagens morreu). Sem este monitor o app fica aberto e inerte, que era
 # justamente o que o usuario via. Aqui ele se conserta sozinho e, tao
 # importante quanto, deixa registrado no log que isso aconteceu.
-HEALTH_CHECK_SECONDS = 30
-HEARTBEAT_EVERY_CHECKS = 40   # ~20 min entre linhas de "ainda vivo"
+HEALTH_CHECK_SECONDS = 10
+HEARTBEAT_EVERY_CHECKS = 120   # ~20 min entre linhas de "ainda vivo"
+FALLBACK_RELOAD_EVERY_CHECKS = 6  # 1 min para reparar o hook antigo
 
 _health_thread = None
 
@@ -1774,7 +1993,17 @@ def _health_loop():
                 if inactive:
                     log(f"Atalhos inativos detectados ({', '.join(inactive)}); "
                         f"tentando registrar de novo")
+                    status_overlay.set_state(
+                        "error", "O atalho parou de responder. Tentando recuperar..."
+                    )
                     register_hotkeys()
+            elif (_hotkey_backend == "keyboard"
+                  and checks % FALLBACK_RELOAD_EVERY_CHECKS == 0):
+                # O hook antigo pode ser removido silenciosamente pelo Windows.
+                # Recriá-lo periodicamente limita o tempo em que o app fica
+                # aberto sem responder, caso o backend Win32 não esteja ativo.
+                log("Renovando preventivamente o atalho do backend alternativo")
+                register_hotkeys()
             if checks % HEARTBEAT_EVERY_CHECKS == 0:
                 log(f"Heartbeat: atalhos={_hotkey_backend}, gravando={is_recording}, "
                     f"transcrevendo={is_transcribing}")
@@ -1839,6 +2068,11 @@ def build_menu():
 
     return pystray.Menu(
         pystray.MenuItem(lambda item: f"SOLetrando ({config['model']} / {device})", None, enabled=False),
+        pystray.Menu.SEPARATOR,
+        pystray.MenuItem("Iniciar / parar gravacao", lambda icon, item: toggle()),
+        pystray.MenuItem("Configuracoes...", on_open_settings),
+        pystray.MenuItem("Copiar ultimo ditado", on_copy_last_transcript),
+        pystray.MenuItem("Abrir historico", on_open_history),
         pystray.Menu.SEPARATOR,
         pystray.MenuItem("Tecla de gravar", pystray.Menu(*toggle_items)),
         pystray.MenuItem("Tecla de encerrar", pystray.Menu(*quit_items)),
@@ -1935,8 +2169,10 @@ def main():
         rastro no log."""
         icon.visible = True
         log("Tray icon ativo")
+        status_overlay.start()
         register_hotkeys()
         start_health_monitor()
+        update_tray("idle")
 
     close_splash()
     tray_icon.run(setup=on_tray_ready)

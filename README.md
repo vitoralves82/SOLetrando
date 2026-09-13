@@ -20,6 +20,10 @@ Pressione **ScrollLock**, fale, pressione novamente. O texto aparece onde estive
 
 - **100% local** — sem nuvem, sem assinatura, sem limites
 - **Ícone na bandeja do sistema** com indicadores de cor (cinza=ocioso, verde=gravando, amarelo=transcrevendo)
+- **Indicador flutuante** com os estados gravando, transcrevendo, pronto e erro
+- **Prévia durante o ditado** sem alterar o campo de destino até o texto final
+- **Vocabulário e correções pessoais** para nomes, siglas e termos recorrentes
+- **Último ditado e histórico local** para recuperar ou copiar um texto depois
 - **Atalhos configuráveis** via menu de clique direito no ícone da bandeja
 - **Bip sonoro** ao iniciar/parar gravação
 - **Inicialização automática** com o Windows via script VBS ou atalho
@@ -188,7 +192,12 @@ As configurações são salvas em `%LOCALAPPDATA%\Soletrando\soletrando_config.j
   "model": "large-v3-turbo",
   "language": "pt",
   "beep_enabled": false,
-  "insert_mode": "paste"
+  "insert_mode": "paste",
+  "vocabulary": ["EnvironPact", "PROCLIM"],
+  "corrections": {"pro clima": "PROCLIM"},
+  "live_preview_enabled": true,
+  "save_history": true,
+  "log_transcripts": false
 }
 ```
 
@@ -212,6 +221,9 @@ Clique com o botão direito no ícone "S" na bandeja do sistema:
 - **Idioma** — Português, Inglês, Espanhol ou detecção automática
 - **Inserção de texto** — colar (rápido) ou digitar (compatível)
 - **Bip sonoro** — sinal sonoro ao iniciar/parar a gravação
+- **Configurações** — editar vocabulário, correções, prévia e histórico
+- **Copiar último ditado** — recuperar o último resultado na área de transferência
+- **Abrir histórico** — consultar os ditados salvos localmente
 - **Abrir log** — abrir o arquivo de log
 - **Abrir pasta** — abrir a pasta de dados (`%LOCALAPPDATA%\Soletrando`)
 - **Encerrar** — fechar o SOLetrando
@@ -309,6 +321,10 @@ Press **ScrollLock**, speak, press again. Text appears wherever your cursor is: 
 
 - **100% local** — no cloud, no subscription, no limits
 - **System tray icon** with color indicators (gray=idle, green=recording, yellow=transcribing)
+- **Floating status indicator** for recording, transcribing, ready, and error states
+- **Live dictation preview** without changing the target field before the final text
+- **Personal vocabulary and corrections** for names, acronyms, and recurring terms
+- **Last dictation and local history** to recover or copy text later
 - **Configurable hotkeys** via right-click menu on the tray icon
 - **Audio beep** feedback when recording starts/stops
 - **Auto-start** with Windows via VBS script or shortcut
@@ -467,7 +483,12 @@ Settings are saved in `%LOCALAPPDATA%\Soletrando\soletrando_config.json`
   "model": "large-v3-turbo",
   "language": "pt",
   "beep_enabled": false,
-  "insert_mode": "paste"
+  "insert_mode": "paste",
+  "vocabulary": ["EnvironPact", "PROCLIM"],
+  "corrections": {"pro clima": "PROCLIM"},
+  "live_preview_enabled": true,
+  "save_history": true,
+  "log_transcripts": false
 }
 ```
 
@@ -479,6 +500,10 @@ You can edit this file directly or use the tray icon menu.
 
 Right-click the "S" icon in the system tray:
 
+- **Iniciar / parar gravação** — start or stop recording from the menu
+- **Configurações** — edit vocabulary, corrections, preview, and history
+- **Copiar último ditado** — restore the latest result to the clipboard
+- **Abrir histórico** — read dictations saved locally
 - **Tecla de gravar** — choose recording hotkey (ScrollLock, F8, F9, F10, Pause, Ctrl+Shift+F, etc.)
 - **Tecla de encerrar** — choose quit hotkey
 - **Modelo** — choose Whisper model (hot-swapped, no restart)
