@@ -7,6 +7,8 @@ keyboard>=0.13.5
 pystray>=0.19.5
 Pillow>=10.0
 huggingface_hub>=0.21
+# Necessario em tempo de execucao para o filtro de atividade de voz (Silero).
+onnxruntime>=1.16,<2
 
 # Somente para gerar o executavel (nao e necessario para rodar o app)
 pyinstaller>=6.0
