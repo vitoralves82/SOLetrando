@@ -29,6 +29,7 @@ from soletrando_text import (
     normalize_corrections,
     normalize_vocabulary,
 )
+from soletrando_audio import build_tone_wav
 from soletrando_ui import StatusOverlay, show_settings_window
 
 IS_WINDOWS = os.name == "nt"
@@ -193,8 +194,12 @@ DEFAULT_CONFIG = {
     # A previa fica somente na janela flutuante. O campo de destino recebe o
     # texto final uma unica vez, evitando duplicacoes durante o reconhecimento.
     "live_preview_enabled": True,
-    "overlay_width": 560,
-    "overlay_height": 180,
+    "overlay_width": 320,
+    "overlay_height": 110,
+    # 0 = fica visivel durante toda a gravacao.
+    "overlay_recording_seconds": 0.0,
+    # -1 = permanece aberta; 0 = fecha imediatamente.
+    "overlay_done_seconds": 1.0,
     "save_history": True,
     # Texto integral pode conter informacao sensivel; o registro tecnico guarda
     # apenas tamanho e desempenho por padrao.
@@ -258,6 +263,15 @@ def sanitize_config(cfg):
     normalized = dict(DEFAULT_CONFIG)
     if isinstance(cfg, dict):
         normalized.update(cfg)
+        # Migra apenas o tamanho padrao da versao anterior. Valores realmente
+        # personalizados pelo usuario permanecem intactos.
+        if (
+            "overlay_done_seconds" not in cfg
+            and cfg.get("overlay_width") == 560
+            and cfg.get("overlay_height") == 180
+        ):
+            normalized["overlay_width"] = DEFAULT_CONFIG["overlay_width"]
+            normalized["overlay_height"] = DEFAULT_CONFIG["overlay_height"]
 
     if normalized["hotkey_toggle"] not in VALID_HOTKEY_TOGGLE_KEYS:
         normalized["hotkey_toggle"] = DEFAULT_CONFIG["hotkey_toggle"]
@@ -277,11 +291,21 @@ def sanitize_config(cfg):
         if not isinstance(normalized.get(key), bool):
             normalized[key] = DEFAULT_CONFIG[key]
     for key, minimum, maximum in (
-        ("overlay_width", 360, 1000),
-        ("overlay_height", 120, 600),
+        ("overlay_width", 220, 1000),
+        ("overlay_height", 76, 600),
     ):
         try:
             normalized[key] = max(minimum, min(maximum, int(normalized[key])))
+        except (TypeError, ValueError):
+            normalized[key] = DEFAULT_CONFIG[key]
+    for key, minimum, maximum in (
+        ("overlay_recording_seconds", 0.0, 60.0),
+        ("overlay_done_seconds", -1.0, 60.0),
+    ):
+        try:
+            normalized[key] = max(
+                minimum, min(maximum, float(normalized[key]))
+            )
         except (TypeError, ValueError):
             normalized[key] = DEFAULT_CONFIG[key]
     return normalized
@@ -632,6 +656,8 @@ status_overlay = StatusOverlay(
     config["overlay_width"], config["overlay_height"]
 )
 _preview_thread = None
+_preview_text_by_session = {}
+_target_window_handle = None
 LIVE_PREVIEW_INTERVAL_SECONDS = 2.0
 LIVE_PREVIEW_MAX_SECONDS = 20
 
@@ -764,7 +790,8 @@ def update_tray(state, extra=None):
 
         if state == "recording":
             status_overlay.set_state(
-                "recording", "Fale normalmente. Pressione o atalho para concluir."
+                "recording", "Fale normalmente. Pressione o atalho para concluir.",
+                hide_after=config["overlay_recording_seconds"] or None,
             )
         elif state == "transcribing":
             status_overlay.set_state(
@@ -1223,14 +1250,17 @@ def _radio_check(config_key, value):
 # BEEPS
 # =====================================================================
 def _beep(freq, duration):
-    """winsound.Beep e sincrono; rodar direto no callback do 'keyboard'
-    atrasava o inicio da gravacao em ~120ms."""
+    """Reproduz um tom pelo dispositivo de audio padrao do Windows."""
     def run():
         try:
             import winsound
-            winsound.Beep(freq, duration)
-        except Exception:
-            pass
+
+            winsound.PlaySound(
+                build_tone_wav(freq, duration),
+                winsound.SND_MEMORY | winsound.SND_NODEFAULT,
+            )
+        except Exception as e:
+            log(f"Falha ao reproduzir bip: {e}")
     threading.Thread(target=run, daemon=True).start()
 
 
@@ -1246,6 +1276,8 @@ def toggle_beep(icon, item):
     config["beep_enabled"] = not config["beep_enabled"]
     save_config(config)
     log(f"Bip sonoro {'ativado' if config['beep_enabled'] else 'desativado'}")
+    if config["beep_enabled"]:
+        beep_start()
 
 
 # =====================================================================
@@ -1342,6 +1374,8 @@ def _live_preview_loop(session):
                     merge_preview_text(accumulated, partial)
                     if window_was_trimmed else partial
                 )
+                with state_lock:
+                    _preview_text_by_session[session] = accumulated
                 status_overlay.set_state("recording", accumulated)
         except Exception as e:
             log(f"Falha na previa ao vivo: {e}")
@@ -1366,7 +1400,7 @@ def start_live_preview(session):
 def start_recording():
     """Deve ser chamado com state_lock adquirido."""
     global is_recording, audio_frames, stream, recording_session, watchdog_timer
-    global _overflow_logged
+    global _overflow_logged, _target_window_handle
 
     if is_recording:
         return
@@ -1396,6 +1430,14 @@ def start_recording():
 
     recording_session += 1
     session = recording_session
+    _preview_text_by_session.pop(session, None)
+    if IS_WINDOWS:
+        try:
+            user32 = ctypes.windll.user32
+            user32.GetForegroundWindow.restype = ctypes.c_void_p
+            _target_window_handle = user32.GetForegroundWindow()
+        except Exception:
+            _target_window_handle = None
     is_recording = True
     log("REC iniciado")
     update_tray("recording")
@@ -1569,6 +1611,24 @@ def wait_modifiers_released(timeout=1.5):
 def insert_text(text, clipboard_ok):
     wait_modifiers_released()
 
+    # A caixa flutuante nunca deveria receber foco, mas algumas combinacoes de
+    # escala e versao do Windows ainda podem ativar uma janela Tk. Restauramos
+    # o campo que estava ativo quando a gravacao comecou antes de enviar Ctrl+V.
+    if IS_WINDOWS and _target_window_handle:
+        try:
+            user32 = ctypes.windll.user32
+            user32.GetForegroundWindow.restype = ctypes.c_void_p
+            user32.SetForegroundWindow.argtypes = [ctypes.c_void_p]
+            if user32.GetForegroundWindow() != _target_window_handle:
+                restored = bool(user32.SetForegroundWindow(_target_window_handle))
+                time.sleep(0.08)
+                log(
+                    "Foco restaurado para o destino: "
+                    f"{'sim' if restored else 'solicitado'}"
+                )
+        except Exception as e:
+            log(f"Nao foi possivel restaurar o foco de destino: {e}")
+
     if config["insert_mode"] == "paste" and clipboard_ok:
         try:
             keyboard.send("ctrl+v")
@@ -1652,7 +1712,7 @@ def save_transcript(text):
 # =====================================================================
 # TRANSCREVER
 # =====================================================================
-SILENCE_RMS_THRESHOLD = 0.004   # RMS e mais confiavel que pico isolado
+SILENCE_RMS_THRESHOLD = 0.0015  # VAD faz a separacao fina entre fala e ruido
 MAX_NORMALIZATION_GAIN = 8.0    # evita amplificar ruido de fundo em 100x
 
 
@@ -1661,6 +1721,7 @@ def stop_and_transcribe():
 
     transcribe_started_at = None
     completed_text = None
+    preview_fallback = ""
 
     with state_lock:
         if not is_recording or is_transcribing:
@@ -1675,6 +1736,7 @@ def stop_and_transcribe():
         # is_recording == False), evitando corrida durante o concatenate.
         frames = audio_frames
         audio_frames = []
+        preview_fallback = _preview_text_by_session.pop(recording_session, "")
 
     # try/finally garante que is_transcribing SEMPRE volte a False e o tray
     # volte para idle, mesmo diante de uma excecao inesperada. Sem isso, um
@@ -1712,7 +1774,7 @@ def stop_and_transcribe():
 
         # RMS em vez de pico: um estalo do teclado gera pico alto sem fala,
         # e uma fala baixa pode ter pico modesto. RMS separa melhor os dois.
-        if rms < SILENCE_RMS_THRESHOLD:
+        if rms < SILENCE_RMS_THRESHOLD and not preview_fallback:
             log("Audio muito silencioso, ignorando")
             return
 
@@ -1747,6 +1809,14 @@ def stop_and_transcribe():
             return
 
         text = clean_transcript(text)
+        if not preview_fallback:
+            with state_lock:
+                preview_fallback = _preview_text_by_session.pop(
+                    recording_session, ""
+                )
+        if not text and preview_fallback:
+            text = preview_fallback
+            log("Resultado final vazio; usando a previa reconhecida como recuperacao")
         if not text:
             log("Nenhuma fala detectada")
             return
@@ -1764,6 +1834,8 @@ def stop_and_transcribe():
     except Exception as e:
         log(f"Erro inesperado na transcricao: {e}")
     finally:
+        with state_lock:
+            _preview_text_by_session.pop(recording_session, None)
         # Segura o icone vermelho pelo tempo minimo antes de voltar ao amarelo.
         # A espera acontece com is_transcribing ainda True, entao um toggle
         # nesse intervalo e ignorado (e registrado) em vez de disputar o estado.
@@ -1778,7 +1850,11 @@ def stop_and_transcribe():
                 update_tray("idle")
                 if completed_text:
                     status_overlay.set_state(
-                        "done", completed_text, hide_after=10.0
+                        "done", completed_text,
+                        hide_after=(
+                            None if config["overlay_done_seconds"] < 0
+                            else config["overlay_done_seconds"]
+                        ),
                     )
 
 
@@ -1879,7 +1955,8 @@ def _save_settings(values):
     requested_model = values.get("model", previous_model)
     allowed = {
         "vocabulary", "corrections", "live_preview_enabled",
-        "overlay_width", "overlay_height", "save_history", "log_transcripts",
+        "overlay_width", "overlay_height", "overlay_recording_seconds",
+        "overlay_done_seconds", "save_history", "log_transcripts",
     }
     for key in allowed:
         if key in values:
@@ -1892,9 +1969,7 @@ def _save_settings(values):
         config["overlay_width"], config["overlay_height"]
     )
     rebuild_menu()
-    status_overlay.set_state(
-        "done", "Configurações salvas.", hide_after=2.5
-    )
+    status_overlay.set_state("done", "Configurações salvas.", hide_after=1.0)
     log("Configuracoes atualizadas")
     if requested_model != previous_model:
         change_model(requested_model)
@@ -1906,6 +1981,21 @@ def on_open_settings(icon, item):
         "open_history": lambda: on_open_history(None, None),
         "open_folder": lambda: on_open_folder(None, None),
         "uninstall": lambda: on_uninstall(None, None),
+        "preview_overlay": lambda width, height: (
+            status_overlay.configure(width, height),
+            status_overlay.set_state(
+                "preview",
+                "Esta é uma prévia do tamanho. O texto longo poderá ser rolado.",
+                force_show=True,
+            ),
+        ),
+        "cancel_overlay_preview": lambda: (
+            status_overlay.configure(
+                config["overlay_width"], config["overlay_height"]
+            ),
+            status_overlay.hide(),
+        ),
+        "hide_overlay": status_overlay.hide,
     }
     if not show_settings_window(
         config, _save_settings, MODEL_OPTIONS, actions

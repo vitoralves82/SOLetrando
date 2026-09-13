@@ -20,8 +20,8 @@ Pressione **ScrollLock**, fale, pressione novamente. O texto aparece onde estive
 
 - **100% local** — sem nuvem, sem assinatura, sem limites
 - **Ícone na bandeja do sistema** com indicadores de cor (cinza=ocioso, verde=gravando, amarelo=transcrevendo)
-- **Indicador flutuante rolável** com os estados gravando, transcrevendo, pronto e erro
-- **Prévia integral durante o ditado** com largura e altura configuráveis
+- **Indicador flutuante rolável** com botão discreto para fechar
+- **Prévia integral durante o ditado** com tamanho e duração configuráveis
 - **Vocabulário e correções pessoais** para nomes, siglas e termos recorrentes
 - **Último ditado e histórico local** para recuperar ou copiar um texto depois
 - **Atalhos configuráveis** via menu de clique direito no ícone da bandeja
@@ -197,8 +197,10 @@ As configurações são salvas em `%LOCALAPPDATA%\Soletrando\soletrando_config.j
   "vocabulary": ["EnvironPact", "PROCLIM"],
   "corrections": {"pro clima": "PROCLIM"},
   "live_preview_enabled": true,
-  "overlay_width": 560,
-  "overlay_height": 180,
+  "overlay_width": 320,
+  "overlay_height": 110,
+  "overlay_recording_seconds": 0.0,
+  "overlay_done_seconds": 1.0,
   "save_history": true,
   "log_transcripts": false
 }
@@ -232,6 +234,8 @@ Clique com o botão direito no ícone "S" na bandeja do sistema:
 Dentro de **Configurações**, a aba **Diagnóstico** reúne o registro técnico, o
 histórico, a pasta de dados e a desinstalação. A aba **Como usar** contém um guia
 rápido. A caixa de prévia possui barra de rolagem e pode ser arrastada pelo título.
+As dimensões são demonstradas ao vivo durante o ajuste. Também é possível definir
+quando a caixa desaparece e fechá-la imediatamente pelo botão ×.
 
 ---
 
@@ -326,8 +330,8 @@ Press **ScrollLock**, speak, press again. Text appears wherever your cursor is: 
 
 - **100% local** — no cloud, no subscription, no limits
 - **System tray icon** with color indicators (gray=idle, green=recording, yellow=transcribing)
-- **Scrollable floating status indicator** for recording, transcribing, ready, and error states
-- **Full live dictation preview** with configurable width and height
+- **Scrollable floating status indicator** with a discreet close button
+- **Full live dictation preview** with configurable size and visibility duration
 - **Personal vocabulary and corrections** for names, acronyms, and recurring terms
 - **Last dictation and local history** to recover or copy text later
 - **Configurable hotkeys** via right-click menu on the tray icon
@@ -492,8 +496,10 @@ Settings are saved in `%LOCALAPPDATA%\Soletrando\soletrando_config.json`
   "vocabulary": ["EnvironPact", "PROCLIM"],
   "corrections": {"pro clima": "PROCLIM"},
   "live_preview_enabled": true,
-  "overlay_width": 560,
-  "overlay_height": 180,
+  "overlay_width": 320,
+  "overlay_height": 110,
+  "overlay_recording_seconds": 0.0,
+  "overlay_done_seconds": 1.0,
   "save_history": true,
   "log_transcripts": false
 }
@@ -521,6 +527,8 @@ Right-click the "S" icon in the system tray:
 Under **Configurações**, the **Diagnóstico** tab contains the technical log,
 dictation history, data folder, and uninstall action. **Como usar** provides a
 short guide. The preview has a scrollbar and can be dragged by its title.
+Its size is shown live while editing. Users can control when it disappears or
+close it immediately with the × button.
 
 ---
 
