@@ -4,6 +4,7 @@ from soletrando_text import (
     apply_corrections,
     build_initial_prompt,
     normalize_vocabulary,
+    merge_preview_text,
     parse_corrections,
 )
 
@@ -39,6 +40,22 @@ class TextToolsTests(unittest.TestCase):
         prompt = build_initial_prompt(["EnvironPact", "Camarupim"])
         self.assertIn("português brasileiro", prompt)
         self.assertIn("EnvironPact", prompt)
+
+    def test_preview_keeps_old_text_and_removes_overlap(self):
+        self.assertEqual(
+            merge_preview_text(
+                "Este é o começo de um ditado bastante longo.",
+                "um ditado bastante longo. Agora chegou a parte seguinte.",
+            ),
+            "Este é o começo de um ditado bastante longo. "
+            "Agora chegou a parte seguinte.",
+        )
+
+    def test_preview_accepts_a_more_complete_revision(self):
+        self.assertEqual(
+            merge_preview_text("Uma frase parcial", "Uma frase parcial completa."),
+            "Uma frase parcial completa.",
+        )
 
 
 if __name__ == "__main__":

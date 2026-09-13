@@ -20,8 +20,8 @@ Pressione **ScrollLock**, fale, pressione novamente. O texto aparece onde estive
 
 - **100% local** — sem nuvem, sem assinatura, sem limites
 - **Ícone na bandeja do sistema** com indicadores de cor (cinza=ocioso, verde=gravando, amarelo=transcrevendo)
-- **Indicador flutuante** com os estados gravando, transcrevendo, pronto e erro
-- **Prévia durante o ditado** sem alterar o campo de destino até o texto final
+- **Indicador flutuante rolável** com os estados gravando, transcrevendo, pronto e erro
+- **Prévia integral durante o ditado** com largura e altura configuráveis
 - **Vocabulário e correções pessoais** para nomes, siglas e termos recorrentes
 - **Último ditado e histórico local** para recuperar ou copiar um texto depois
 - **Atalhos configuráveis** via menu de clique direito no ícone da bandeja
@@ -129,8 +129,9 @@ python soletrando.py --model small --language en
 python soletrando.py --language auto
 ```
 
-Você também pode alterar o modelo, o idioma e o modo de inserção pelo menu do
-ícone na bandeja — a troca é aplicada na hora, sem reiniciar o app.
+Você também pode alterar o modelo em **Configurações**. O idioma e o modo de
+inserção permanecem no menu da bandeja. As mudanças são aplicadas sem reiniciar
+o aplicativo.
 
 ### Modelos — velocidade vs. precisão
 
@@ -196,6 +197,8 @@ As configurações são salvas em `%LOCALAPPDATA%\Soletrando\soletrando_config.j
   "vocabulary": ["EnvironPact", "PROCLIM"],
   "corrections": {"pro clima": "PROCLIM"},
   "live_preview_enabled": true,
+  "overlay_width": 560,
+  "overlay_height": 180,
   "save_history": true,
   "log_transcripts": false
 }
@@ -217,16 +220,18 @@ Clique com o botão direito no ícone "S" na bandeja do sistema:
 
 - **Tecla de gravar** — escolher atalho de gravação (ScrollLock, F8, F9, F10, Pause, Ctrl+Shift+F, etc.)
 - **Tecla de encerrar** — escolher atalho para sair
-- **Modelo** — escolher modelo Whisper (troca em tempo real, sem reiniciar)
 - **Idioma** — Português, Inglês, Espanhol ou detecção automática
 - **Inserção de texto** — colar (rápido) ou digitar (compatível)
 - **Bip sonoro** — sinal sonoro ao iniciar/parar a gravação
-- **Configurações** — editar vocabulário, correções, prévia e histórico
+- **Configurações** — modelo, tamanho da prévia, vocabulário, ajuda e diagnóstico
 - **Copiar último ditado** — recuperar o último resultado na área de transferência
 - **Abrir histórico** — consultar os ditados salvos localmente
-- **Abrir log** — abrir o arquivo de log
 - **Abrir pasta** — abrir a pasta de dados (`%LOCALAPPDATA%\Soletrando`)
 - **Encerrar** — fechar o SOLetrando
+
+Dentro de **Configurações**, a aba **Diagnóstico** reúne o registro técnico, o
+histórico, a pasta de dados e a desinstalação. A aba **Como usar** contém um guia
+rápido. A caixa de prévia possui barra de rolagem e pode ser arrastada pelo título.
 
 ---
 
@@ -321,8 +326,8 @@ Press **ScrollLock**, speak, press again. Text appears wherever your cursor is: 
 
 - **100% local** — no cloud, no subscription, no limits
 - **System tray icon** with color indicators (gray=idle, green=recording, yellow=transcribing)
-- **Floating status indicator** for recording, transcribing, ready, and error states
-- **Live dictation preview** without changing the target field before the final text
+- **Scrollable floating status indicator** for recording, transcribing, ready, and error states
+- **Full live dictation preview** with configurable width and height
 - **Personal vocabulary and corrections** for names, acronyms, and recurring terms
 - **Last dictation and local history** to recover or copy text later
 - **Configurable hotkeys** via right-click menu on the tray icon
@@ -429,7 +434,7 @@ python soletrando.py --model large-v3
 python soletrando.py --model small --language en
 ```
 
-You can also change the model via the tray icon menu (requires restart).
+You can also change the model under **Configurações** without restarting the app.
 
 ### Models — speed vs. accuracy
 
@@ -487,6 +492,8 @@ Settings are saved in `%LOCALAPPDATA%\Soletrando\soletrando_config.json`
   "vocabulary": ["EnvironPact", "PROCLIM"],
   "corrections": {"pro clima": "PROCLIM"},
   "live_preview_enabled": true,
+  "overlay_width": 560,
+  "overlay_height": 180,
   "save_history": true,
   "log_transcripts": false
 }
@@ -501,17 +508,19 @@ You can edit this file directly or use the tray icon menu.
 Right-click the "S" icon in the system tray:
 
 - **Iniciar / parar gravação** — start or stop recording from the menu
-- **Configurações** — edit vocabulary, corrections, preview, and history
+- **Configurações** — model, preview size, vocabulary, help, and diagnostics
 - **Copiar último ditado** — restore the latest result to the clipboard
 - **Abrir histórico** — read dictations saved locally
 - **Tecla de gravar** — choose recording hotkey (ScrollLock, F8, F9, F10, Pause, Ctrl+Shift+F, etc.)
 - **Tecla de encerrar** — choose quit hotkey
-- **Modelo** — choose Whisper model (hot-swapped, no restart)
 - **Idioma** — Portuguese, English, Spanish or auto-detect
 - **Inserção de texto** — paste (fast) or type (compatible)
-- **Abrir log** — open the log file
 - **Abrir pasta** — open the installation folder
 - **Encerrar** — quit SOLetrando
+
+Under **Configurações**, the **Diagnóstico** tab contains the technical log,
+dictation history, data folder, and uninstall action. **Como usar** provides a
+short guide. The preview has a scrollbar and can be dragged by its title.
 
 ---
 

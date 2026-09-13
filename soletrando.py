@@ -25,6 +25,7 @@ from datetime import datetime
 from soletrando_text import (
     apply_corrections,
     build_initial_prompt,
+    merge_preview_text,
     normalize_corrections,
     normalize_vocabulary,
 )
@@ -192,6 +193,8 @@ DEFAULT_CONFIG = {
     # A previa fica somente na janela flutuante. O campo de destino recebe o
     # texto final uma unica vez, evitando duplicacoes durante o reconhecimento.
     "live_preview_enabled": True,
+    "overlay_width": 560,
+    "overlay_height": 180,
     "save_history": True,
     # Texto integral pode conter informacao sensivel; o registro tecnico guarda
     # apenas tamanho e desempenho por padrao.
@@ -272,6 +275,14 @@ def sanitize_config(cfg):
     normalized["corrections"] = normalize_corrections(normalized.get("corrections"))
     for key in ("live_preview_enabled", "save_history", "log_transcripts"):
         if not isinstance(normalized.get(key), bool):
+            normalized[key] = DEFAULT_CONFIG[key]
+    for key, minimum, maximum in (
+        ("overlay_width", 360, 1000),
+        ("overlay_height", 120, 600),
+    ):
+        try:
+            normalized[key] = max(minimum, min(maximum, int(normalized[key])))
+        except (TypeError, ValueError):
             normalized[key] = DEFAULT_CONFIG[key]
     return normalized
 
@@ -617,7 +628,9 @@ current_hotkey_toggle = None
 current_hotkey_quit = None
 recording_session = 0      # identifica cada gravacao (usado pelo watchdog)
 watchdog_timer = None      # cancelado ao parar (antes vazava 1 thread/gravacao)
-status_overlay = StatusOverlay()
+status_overlay = StatusOverlay(
+    config["overlay_width"], config["overlay_height"]
+)
 _preview_thread = None
 LIVE_PREVIEW_INTERVAL_SECONDS = 2.0
 LIVE_PREVIEW_MAX_SECONDS = 20
@@ -1287,7 +1300,8 @@ def _watchdog_stop(session):
 
 
 def _live_preview_loop(session):
-    """Atualiza a janela flutuante com uma transcricao parcial curta."""
+    """Atualiza a janela flutuante e preserva o texto desde o inicio."""
+    accumulated = ""
     while not _shutdown_started.is_set():
         if _shutdown_started.wait(LIVE_PREVIEW_INTERVAL_SECONDS):
             return
@@ -1301,7 +1315,8 @@ def _live_preview_loop(session):
         try:
             audio_data = np.concatenate(frames, axis=0).flatten().astype(np.float32)
             max_samples = SAMPLE_RATE * LIVE_PREVIEW_MAX_SECONDS
-            if audio_data.size > max_samples:
+            window_was_trimmed = audio_data.size > max_samples
+            if window_was_trimmed:
                 audio_data = audio_data[-max_samples:]
             if audio_data.size < SAMPLE_RATE:
                 continue
@@ -1321,7 +1336,13 @@ def _live_preview_loop(session):
                 " ".join(segment.text.strip() for segment in segments).strip()
             )
             if partial:
-                status_overlay.set_state("recording", partial[-280:])
+                # Antes de 20 s, a janela contem todo o audio e pode substituir
+                # a hipotese anterior. Depois disso, unimos janelas sobrepostas.
+                accumulated = (
+                    merge_preview_text(accumulated, partial)
+                    if window_was_trimmed else partial
+                )
+                status_overlay.set_state("recording", accumulated)
         except Exception as e:
             log(f"Falha na previa ao vivo: {e}")
             return
@@ -1757,7 +1778,7 @@ def stop_and_transcribe():
                 update_tray("idle")
                 if completed_text:
                     status_overlay.set_state(
-                        "done", completed_text[-280:], hide_after=4.0
+                        "done", completed_text, hide_after=10.0
                     )
 
 
@@ -1854,9 +1875,11 @@ def change_insert_mode(mode_key):
 
 def _save_settings(values):
     """Recebe somente os campos editaveis da janela de configuracoes."""
+    previous_model = config["model"]
+    requested_model = values.get("model", previous_model)
     allowed = {
         "vocabulary", "corrections", "live_preview_enabled",
-        "save_history", "log_transcripts",
+        "overlay_width", "overlay_height", "save_history", "log_transcripts",
     }
     for key in allowed:
         if key in values:
@@ -1865,15 +1888,28 @@ def _save_settings(values):
     config.clear()
     config.update(sanitized)
     save_config(config)
+    status_overlay.configure(
+        config["overlay_width"], config["overlay_height"]
+    )
     rebuild_menu()
     status_overlay.set_state(
         "done", "Configurações salvas.", hide_after=2.5
     )
-    log("Configuracoes de vocabulario e historico atualizadas")
+    log("Configuracoes atualizadas")
+    if requested_model != previous_model:
+        change_model(requested_model)
 
 
 def on_open_settings(icon, item):
-    if not show_settings_window(config, _save_settings):
+    actions = {
+        "open_log": lambda: on_open_log(None, None),
+        "open_history": lambda: on_open_history(None, None),
+        "open_folder": lambda: on_open_folder(None, None),
+        "uninstall": lambda: on_uninstall(None, None),
+    }
+    if not show_settings_window(
+        config, _save_settings, MODEL_OPTIONS, actions
+    ):
         notify("A janela de configuracoes ja esta aberta.")
 
 
@@ -2062,7 +2098,6 @@ def build_menu():
         for label, key in QUIT_KEY_OPTIONS
     ]
 
-    model_items = _radio_items(MODEL_OPTIONS, "model", change_model)
     language_items = _radio_items(LANGUAGE_OPTIONS, "language", change_language)
     insert_items = _radio_items(INSERT_MODE_OPTIONS, "insert_mode", change_insert_mode)
 
@@ -2076,7 +2111,6 @@ def build_menu():
         pystray.Menu.SEPARATOR,
         pystray.MenuItem("Tecla de gravar", pystray.Menu(*toggle_items)),
         pystray.MenuItem("Tecla de encerrar", pystray.Menu(*quit_items)),
-        pystray.MenuItem("Modelo", pystray.Menu(*model_items)),
         pystray.MenuItem("Idioma", pystray.Menu(*language_items)),
         pystray.MenuItem("Insercao de texto", pystray.Menu(*insert_items)),
         pystray.Menu.SEPARATOR,
@@ -2085,10 +2119,7 @@ def build_menu():
             toggle_beep,
             checked=lambda item: config["beep_enabled"],
         ),
-        pystray.MenuItem("Abrir log", on_open_log),
         pystray.MenuItem("Abrir pasta", on_open_folder),
-        pystray.Menu.SEPARATOR,
-        pystray.MenuItem("Desinstalar SOLetrando...", on_uninstall),
         pystray.Menu.SEPARATOR,
         pystray.MenuItem("Encerrar", on_tray_quit),
     )

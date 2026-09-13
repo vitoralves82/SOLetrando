@@ -75,3 +75,41 @@ def build_initial_prompt(vocabulary):
     if not terms:
         return None
     return "Vocabulário preferencial em português brasileiro: " + ", ".join(terms)
+
+
+def merge_preview_text(existing, incoming):
+    """Une janelas sobrepostas da previa sem perder o inicio do ditado."""
+    existing = str(existing).strip()
+    incoming = str(incoming).strip()
+    if not existing:
+        return incoming
+    if not incoming:
+        return existing
+
+    existing_folded = existing.casefold()
+    incoming_folded = incoming.casefold()
+    if incoming_folded.startswith(existing_folded):
+        return incoming
+    if incoming_folded in existing_folded:
+        return existing
+
+    old_words = existing.split()
+    new_words = incoming.split()
+
+    def comparable(word):
+        return re.sub(r"[^\wÀ-ÿ]", "", word, flags=re.UNICODE).casefold()
+
+    old_keys = [comparable(word) for word in old_words]
+    new_keys = [comparable(word) for word in new_words]
+    maximum = min(len(old_keys), len(new_keys))
+    overlap = 0
+    for size in range(maximum, 0, -1):
+        if old_keys[-size:] == new_keys[:size]:
+            overlap = size
+            break
+
+    # Uma coincidencia isolada pode juntar frases diferentes indevidamente.
+    if overlap < 2 and len(old_words) > 2 and len(new_words) > 2:
+        overlap = 0
+    remainder = " ".join(new_words[overlap:])
+    return existing if not remainder else f"{existing} {remainder}"
