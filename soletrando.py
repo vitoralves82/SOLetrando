@@ -22,6 +22,16 @@ import unicodedata
 from pathlib import Path
 from datetime import datetime
 
+from soletrando_text import (
+    apply_corrections,
+    build_initial_prompt,
+    merge_preview_text,
+    normalize_corrections,
+    normalize_vocabulary,
+)
+from soletrando_audio import build_tone_wav
+from soletrando_ui import StatusOverlay, show_settings_window
+
 IS_WINDOWS = os.name == "nt"
 
 # =====================================================================
@@ -109,6 +119,8 @@ MODELS_DIR.mkdir(parents=True, exist_ok=True)
 
 LOG_PATH = DATA_DIR / "soletrando.log"
 CONFIG_PATH = DATA_DIR / "soletrando_config.json"
+LAST_TRANSCRIPT_PATH = DATA_DIR / "ultimo_ditado.txt"
+HISTORY_PATH = DATA_DIR / "historico_ditados.txt"
 HAS_CONSOLE = sys.stdout is not None and hasattr(sys.stdout, "write")
 
 LOG_MAX_BYTES = 1024 * 1024  # 1 MB antes de rotacionar
@@ -176,6 +188,22 @@ DEFAULT_CONFIG = {
     # "paste" = Ctrl+V (instantaneo, unicode perfeito)
     # "type"  = simula digitacao tecla a tecla (compativel com terminais)
     "insert_mode": "paste",
+    # Termos que ajudam o modelo e substituicoes aplicadas ao resultado final.
+    "vocabulary": [],
+    "corrections": {},
+    # A previa fica somente na janela flutuante. O campo de destino recebe o
+    # texto final uma unica vez, evitando duplicacoes durante o reconhecimento.
+    "live_preview_enabled": True,
+    "overlay_width": 320,
+    "overlay_height": 110,
+    # 0 = fica visivel durante toda a gravacao.
+    "overlay_recording_seconds": 0.0,
+    # -1 = permanece aberta; 0 = fecha imediatamente.
+    "overlay_done_seconds": 1.0,
+    "save_history": True,
+    # Texto integral pode conter informacao sensivel; o registro tecnico guarda
+    # apenas tamanho e desempenho por padrao.
+    "log_transcripts": False,
 }
 
 # Opcoes de hotkey disponiveis no menu
@@ -235,6 +263,15 @@ def sanitize_config(cfg):
     normalized = dict(DEFAULT_CONFIG)
     if isinstance(cfg, dict):
         normalized.update(cfg)
+        # Migra apenas o tamanho padrao da versao anterior. Valores realmente
+        # personalizados pelo usuario permanecem intactos.
+        if (
+            "overlay_done_seconds" not in cfg
+            and cfg.get("overlay_width") == 560
+            and cfg.get("overlay_height") == 180
+        ):
+            normalized["overlay_width"] = DEFAULT_CONFIG["overlay_width"]
+            normalized["overlay_height"] = DEFAULT_CONFIG["overlay_height"]
 
     if normalized["hotkey_toggle"] not in VALID_HOTKEY_TOGGLE_KEYS:
         normalized["hotkey_toggle"] = DEFAULT_CONFIG["hotkey_toggle"]
@@ -248,6 +285,29 @@ def sanitize_config(cfg):
         normalized["beep_enabled"] = DEFAULT_CONFIG["beep_enabled"]
     if normalized.get("insert_mode") not in VALID_INSERT_MODES:
         normalized["insert_mode"] = DEFAULT_CONFIG["insert_mode"]
+    normalized["vocabulary"] = normalize_vocabulary(normalized.get("vocabulary"))
+    normalized["corrections"] = normalize_corrections(normalized.get("corrections"))
+    for key in ("live_preview_enabled", "save_history", "log_transcripts"):
+        if not isinstance(normalized.get(key), bool):
+            normalized[key] = DEFAULT_CONFIG[key]
+    for key, minimum, maximum in (
+        ("overlay_width", 120, 1000),
+        ("overlay_height", 44, 600),
+    ):
+        try:
+            normalized[key] = max(minimum, min(maximum, int(normalized[key])))
+        except (TypeError, ValueError):
+            normalized[key] = DEFAULT_CONFIG[key]
+    for key, minimum, maximum in (
+        ("overlay_recording_seconds", 0.0, 60.0),
+        ("overlay_done_seconds", -1.0, 60.0),
+    ):
+        try:
+            normalized[key] = max(
+                minimum, min(maximum, float(normalized[key]))
+            )
+        except (TypeError, ValueError):
+            normalized[key] = DEFAULT_CONFIG[key]
     return normalized
 
 
@@ -592,17 +652,25 @@ current_hotkey_toggle = None
 current_hotkey_quit = None
 recording_session = 0      # identifica cada gravacao (usado pelo watchdog)
 watchdog_timer = None      # cancelado ao parar (antes vazava 1 thread/gravacao)
+status_overlay = StatusOverlay(
+    config["overlay_width"], config["overlay_height"]
+)
+_preview_thread = None
+_preview_text_by_session = {}
+_target_window_handle = None
+LIVE_PREVIEW_INTERVAL_SECONDS = 2.0
+LIVE_PREVIEW_MAX_SECONDS = 20
 
 
 # =====================================================================
 # TRAY ICON
 # =====================================================================
 COLOR_IDLE = "#FFC107"        # amarelo, igual ao icon_idle.png
-COLOR_REC = "#00C853"         # verde, igual ao icon_recording.png
-COLOR_TRANSCRIBING = "#FF0000"  # vermelho, igual ao icon_transcribing.png
+COLOR_REC = "#2563EB"         # azul, igual ao icon_recording.png
+COLOR_TRANSCRIBING = "#F2BC2E"  # ambar, igual ao icon_transcribing.png
 
 # Tempo minimo que um estado fica visivel na bandeja. Com o turbo + colagem
-# por Ctrl+V a transcricao ficou tao rapida que o icone vermelho piscava por
+# por Ctrl+V a transcricao ficou tao rapida que o icone ambar piscava por
 # poucos milissegundos e passava despercebido.
 MIN_STATE_VISIBLE_SECONDS = 0.6
 
@@ -675,7 +743,7 @@ def load_icon(state):
             log(f"Erro ao carregar icone {state} em {base}: {e}")
 
     if img is None:
-        # Fallback com as MESMAS cores dos PNGs (amarelo/verde/vermelho), para
+        # Fallback com as MESMAS cores dos PNGs (amarelo/azul/ambar), para
         # que o feedback visual continue correto mesmo sem os arquivos.
         log(f"Icone '{filename}' nao encontrado, usando icone gerado para '{state}'")
         colors = {"idle": COLOR_IDLE, "recording": COLOR_REC, "transcribing": COLOR_TRANSCRIBING}
@@ -695,8 +763,8 @@ def idle_title():
 _tray_state = None
 
 
-def update_tray(state, extra=None):
-    """Troca o icone da bandeja: amarelo=parado, verde=gravando, vermelho=transcrevendo."""
+def update_tray(state, extra=None, overlay_detail=None):
+    """Troca o icone da bandeja: amarelo=parado, azul=gravando, ambar=transcrevendo."""
     global _tray_state
 
     if tray_icon is None:
@@ -719,6 +787,21 @@ def update_tray(state, extra=None):
         if state != _tray_state:
             log(f"Icone da bandeja -> {state}")
             _tray_state = state
+
+        if state == "recording":
+            status_overlay.set_state(
+                "recording", "Fale normalmente. Pressione o atalho para concluir.",
+                hide_after=config["overlay_recording_seconds"] or None,
+            )
+        elif state == "transcribing":
+            status_overlay.set_state(
+                "transcribing",
+                overlay_detail or "Preparando o texto final...",
+            )
+        else:
+            status_overlay.set_state(
+                "idle", extra or "Atalho ativo e microfone disponível.", hide_after=1.4
+            )
     except Exception as e:
         log(f"Erro ao atualizar tray ({state}): {e}")
 
@@ -1090,6 +1173,7 @@ def register_hotkeys():
                 log(f"Atalho nao registrado: {msg}.")
                 if msg not in _notified_hotkey_problems:
                     notify(f"Atencao: {msg}.")
+                    status_overlay.set_state("error", msg)
             _notified_hotkey_problems = problems
             if not problems:
                 log(f"Hotkeys ativas via RegisterHotKey: "
@@ -1167,14 +1251,17 @@ def _radio_check(config_key, value):
 # BEEPS
 # =====================================================================
 def _beep(freq, duration):
-    """winsound.Beep e sincrono; rodar direto no callback do 'keyboard'
-    atrasava o inicio da gravacao em ~120ms."""
+    """Reproduz um tom pelo dispositivo de audio padrao do Windows."""
     def run():
         try:
             import winsound
-            winsound.Beep(freq, duration)
-        except Exception:
-            pass
+
+            winsound.PlaySound(
+                build_tone_wav(freq, duration),
+                winsound.SND_MEMORY | winsound.SND_NODEFAULT,
+            )
+        except Exception as e:
+            log(f"Falha ao reproduzir bip: {e}")
     threading.Thread(target=run, daemon=True).start()
 
 
@@ -1190,6 +1277,8 @@ def toggle_beep(icon, item):
     config["beep_enabled"] = not config["beep_enabled"]
     save_config(config)
     log(f"Bip sonoro {'ativado' if config['beep_enabled'] else 'desativado'}")
+    if config["beep_enabled"]:
+        beep_start()
 
 
 # =====================================================================
@@ -1243,10 +1332,76 @@ def _watchdog_stop(session):
     threading.Thread(target=stop_and_transcribe, daemon=True).start()
 
 
+def _live_preview_loop(session):
+    """Atualiza a janela flutuante e preserva o texto desde o inicio."""
+    accumulated = ""
+    while not _shutdown_started.is_set():
+        if _shutdown_started.wait(LIVE_PREVIEW_INTERVAL_SECONDS):
+            return
+        with state_lock:
+            if not is_recording or session != recording_session:
+                return
+            frames = list(audio_frames)
+
+        if not frames or not model_lock.acquire(timeout=0.1):
+            continue
+        try:
+            audio_data = np.concatenate(frames, axis=0).flatten().astype(np.float32)
+            max_samples = SAMPLE_RATE * LIVE_PREVIEW_MAX_SECONDS
+            window_was_trimmed = audio_data.size > max_samples
+            if window_was_trimmed:
+                audio_data = audio_data[-max_samples:]
+            if audio_data.size < SAMPLE_RATE:
+                continue
+            rms = float(np.sqrt(np.mean(np.square(audio_data))))
+            if rms < SILENCE_RMS_THRESHOLD:
+                continue
+            segments, _info = model.transcribe(
+                audio_data,
+                language=config["language"] or None,
+                beam_size=1,
+                vad_filter=True,
+                vad_parameters=dict(min_silence_duration_ms=400, speech_pad_ms=150),
+                condition_on_previous_text=False,
+                initial_prompt=build_initial_prompt(config["vocabulary"]),
+            )
+            partial = clean_transcript(
+                " ".join(segment.text.strip() for segment in segments).strip()
+            )
+            if partial:
+                # Antes de 20 s, a janela contem todo o audio e pode substituir
+                # a hipotese anterior. Depois disso, unimos janelas sobrepostas.
+                accumulated = (
+                    merge_preview_text(accumulated, partial)
+                    if window_was_trimmed else partial
+                )
+                with state_lock:
+                    _preview_text_by_session[session] = accumulated
+                status_overlay.set_state("recording", accumulated)
+        except Exception as e:
+            log(f"Falha na previa ao vivo: {e}")
+            return
+        finally:
+            model_lock.release()
+
+
+def start_live_preview(session):
+    global _preview_thread
+    if not config["live_preview_enabled"]:
+        return
+    _preview_thread = threading.Thread(
+        target=_live_preview_loop,
+        args=(session,),
+        name="soletrando-preview",
+        daemon=True,
+    )
+    _preview_thread.start()
+
+
 def start_recording():
     """Deve ser chamado com state_lock adquirido."""
     global is_recording, audio_frames, stream, recording_session, watchdog_timer
-    global _overflow_logged
+    global _overflow_logged, _target_window_handle
 
     if is_recording:
         return
@@ -1276,9 +1431,22 @@ def start_recording():
 
     recording_session += 1
     session = recording_session
+    _preview_text_by_session.pop(session, None)
+    if IS_WINDOWS:
+        try:
+            user32 = ctypes.windll.user32
+            user32.GetForegroundWindow.restype = ctypes.c_void_p
+            _target_window_handle = user32.GetForegroundWindow()
+        except Exception:
+            _target_window_handle = None
     is_recording = True
     log("REC iniciado")
     update_tray("recording")
+    if config["beep_enabled"]:
+        # O bip confirma que o stream abriu de fato. Antes ele tocava antes da
+        # tentativa e podia sinalizar gravacao mesmo quando o microfone falhava.
+        beep_start()
+    start_live_preview(session)
 
     # Watchdog: para automaticamente se a gravacao for esquecida
     watchdog_timer = threading.Timer(MAX_RECORDING_SECONDS, _watchdog_stop, args=(session,))
@@ -1366,6 +1534,33 @@ def copy_to_clipboard(text):
             pass
 
 
+def copy_to_clipboard_reliable(text):
+    """Usa a API nativa e recorre ao PowerShell se outro processo interferir."""
+    if copy_to_clipboard(text):
+        return True
+    if not IS_WINDOWS:
+        return False
+    try:
+        import subprocess
+        result = subprocess.run(
+            [
+                "powershell", "-NoProfile", "-NonInteractive", "-Command",
+                "$value = [Console]::In.ReadToEnd(); Set-Clipboard -Value $value",
+            ],
+            input=text,
+            text=True,
+            capture_output=True,
+            timeout=8,
+        )
+        if result.returncode == 0:
+            log("Texto copiado para clipboard pelo mecanismo alternativo")
+            return True
+        log(f"Mecanismo alternativo do clipboard falhou: {result.stderr.strip()}")
+    except Exception as e:
+        log(f"Erro no mecanismo alternativo do clipboard: {e}")
+    return False
+
+
 # =====================================================================
 # INSERIR TEXTO
 # =====================================================================
@@ -1416,6 +1611,24 @@ def wait_modifiers_released(timeout=1.5):
 
 def insert_text(text, clipboard_ok):
     wait_modifiers_released()
+
+    # A caixa flutuante nunca deveria receber foco, mas algumas combinacoes de
+    # escala e versao do Windows ainda podem ativar uma janela Tk. Restauramos
+    # o campo que estava ativo quando a gravacao comecou antes de enviar Ctrl+V.
+    if IS_WINDOWS and _target_window_handle:
+        try:
+            user32 = ctypes.windll.user32
+            user32.GetForegroundWindow.restype = ctypes.c_void_p
+            user32.SetForegroundWindow.argtypes = [ctypes.c_void_p]
+            if user32.GetForegroundWindow() != _target_window_handle:
+                restored = bool(user32.SetForegroundWindow(_target_window_handle))
+                time.sleep(0.08)
+                log(
+                    "Foco restaurado para o destino: "
+                    f"{'sim' if restored else 'solicitado'}"
+                )
+        except Exception as e:
+            log(f"Nao foi possivel restaurar o foco de destino: {e}")
 
     if config["insert_mode"] == "paste" and clipboard_ok:
         try:
@@ -1474,10 +1687,33 @@ def clean_transcript(text):
     return text
 
 
+def save_transcript(text):
+    """Mantem o ultimo ditado e, se habilitado, um historico local legivel."""
+    try:
+        temporary = LAST_TRANSCRIPT_PATH.with_suffix(".txt.tmp")
+        temporary.write_text(text, encoding="utf-8")
+        os.replace(temporary, LAST_TRANSCRIPT_PATH)
+    except Exception as e:
+        log(f"Erro ao salvar o ultimo ditado: {e}")
+
+    if not config["save_history"]:
+        return
+    try:
+        if HISTORY_PATH.exists() and HISTORY_PATH.stat().st_size > 2 * 1024 * 1024:
+            backup = HISTORY_PATH.with_suffix(".txt.1")
+            backup.unlink(missing_ok=True)
+            HISTORY_PATH.rename(backup)
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        with HISTORY_PATH.open("a", encoding="utf-8") as history:
+            history.write(f"[{timestamp}] {text}\n")
+    except Exception as e:
+        log(f"Erro ao salvar historico: {e}")
+
+
 # =====================================================================
 # TRANSCREVER
 # =====================================================================
-SILENCE_RMS_THRESHOLD = 0.004   # RMS e mais confiavel que pico isolado
+SILENCE_RMS_THRESHOLD = 0.0015  # VAD faz a separacao fina entre fala e ruido
 MAX_NORMALIZATION_GAIN = 8.0    # evita amplificar ruido de fundo em 100x
 
 
@@ -1485,6 +1721,8 @@ def stop_and_transcribe():
     global is_recording, audio_frames, is_transcribing
 
     transcribe_started_at = None
+    completed_text = None
+    preview_fallback = ""
 
     with state_lock:
         if not is_recording or is_transcribing:
@@ -1499,6 +1737,7 @@ def stop_and_transcribe():
         # is_recording == False), evitando corrida durante o concatenate.
         frames = audio_frames
         audio_frames = []
+        preview_fallback = _preview_text_by_session.pop(recording_session, "")
 
     # try/finally garante que is_transcribing SEMPRE volte a False e o tray
     # volte para idle, mesmo diante de uma excecao inesperada. Sem isso, um
@@ -1509,7 +1748,7 @@ def stop_and_transcribe():
             log("Nenhum audio capturado")
             return
 
-        update_tray("transcribing")
+        update_tray("transcribing", overlay_detail=preview_fallback)
         transcribe_started_at = time.monotonic()
         log("Transcrevendo...")
 
@@ -1536,7 +1775,7 @@ def stop_and_transcribe():
 
         # RMS em vez de pico: um estalo do teclado gera pico alto sem fala,
         # e uma fala baixa pode ter pico modesto. RMS separa melhor os dois.
-        if rms < SILENCE_RMS_THRESHOLD:
+        if rms < SILENCE_RMS_THRESHOLD and not preview_fallback:
             log("Audio muito silencioso, ignorando")
             return
 
@@ -1560,6 +1799,7 @@ def stop_and_transcribe():
                     # texto anterior como contexto e a principal fonte de
                     # loops e alucinacoes repetidas.
                     condition_on_previous_text=False,
+                    initial_prompt=build_initial_prompt(config["vocabulary"]),
                 )
                 text = " ".join(seg.text.strip() for seg in segments).strip()
             if not config["language"]:
@@ -1570,17 +1810,34 @@ def stop_and_transcribe():
             return
 
         text = clean_transcript(text)
+        if not preview_fallback:
+            with state_lock:
+                preview_fallback = _preview_text_by_session.pop(
+                    recording_session, ""
+                )
+        if not text and preview_fallback:
+            text = preview_fallback
+            log("Resultado final vazio; usando a previa reconhecida como recuperacao")
         if not text:
             log("Nenhuma fala detectada")
             return
 
-        log(f"Texto ({len(text)} chars): {text}")
-        clipboard_ok = copy_to_clipboard(text)
+        text = apply_corrections(text, config["corrections"])
+
+        if config["log_transcripts"]:
+            log(f"Texto ({len(text)} chars): {text}")
+        else:
+            log(f"Texto concluido ({len(text)} caracteres)")
+        save_transcript(text)
+        clipboard_ok = copy_to_clipboard_reliable(text)
         insert_text(text, clipboard_ok)
+        completed_text = text
     except Exception as e:
         log(f"Erro inesperado na transcricao: {e}")
     finally:
-        # Segura o icone vermelho pelo tempo minimo antes de voltar ao amarelo.
+        with state_lock:
+            _preview_text_by_session.pop(recording_session, None)
+        # Segura o icone ambar pelo tempo minimo antes de voltar ao amarelo.
         # A espera acontece com is_transcribing ainda True, entao um toggle
         # nesse intervalo e ignorado (e registrado) em vez de disputar o estado.
         if transcribe_started_at is not None:
@@ -1589,9 +1846,17 @@ def stop_and_transcribe():
                 time.sleep(restante)
         with state_lock:
             is_transcribing = False
-            # Se o usuario ja comecou outra gravacao, nao sobrescreve o verde.
+            # Se o usuario ja comecou outra gravacao, nao sobrescreve o azul.
             if not is_recording:
                 update_tray("idle")
+                if completed_text:
+                    status_overlay.set_state(
+                        "done", completed_text,
+                        hide_after=(
+                            None if config["overlay_done_seconds"] < 0
+                            else config["overlay_done_seconds"]
+                        ),
+                    )
 
 
 # =====================================================================
@@ -1619,8 +1884,6 @@ def toggle():
                 return
 
             if not is_recording:
-                if config["beep_enabled"]:
-                    beep_start()
                 start_recording()
                 return
 
@@ -1687,6 +1950,87 @@ def change_insert_mode(mode_key):
     log(f"Modo de insercao alterado para '{mode_key}'")
 
 
+def _save_settings(values):
+    """Recebe somente os campos editaveis da janela de configuracoes."""
+    previous_model = config["model"]
+    requested_model = values.get("model", previous_model)
+    allowed = {
+        "vocabulary", "corrections", "live_preview_enabled",
+        "overlay_width", "overlay_height", "overlay_recording_seconds",
+        "overlay_done_seconds", "save_history", "log_transcripts",
+    }
+    for key in allowed:
+        if key in values:
+            config[key] = values[key]
+    sanitized = sanitize_config(config)
+    config.clear()
+    config.update(sanitized)
+    save_config(config)
+    status_overlay.configure(
+        config["overlay_width"], config["overlay_height"]
+    )
+    rebuild_menu()
+    status_overlay.set_state("done", "Configurações salvas.", hide_after=1.0)
+    log("Configuracoes atualizadas")
+    if requested_model != previous_model:
+        change_model(requested_model)
+
+
+def on_open_settings(icon, item):
+    actions = {
+        "open_log": lambda: on_open_log(None, None),
+        "open_history": lambda: on_open_history(None, None),
+        "open_folder": lambda: on_open_folder(None, None),
+        "uninstall": lambda: on_uninstall(None, None),
+        "preview_overlay": lambda width, height: (
+            status_overlay.configure(width, height),
+            status_overlay.set_state(
+                "preview",
+                "Esta é uma prévia do tamanho. O texto longo poderá ser rolado.",
+                force_show=True,
+            ),
+        ),
+        "cancel_overlay_preview": lambda: (
+            status_overlay.configure(
+                config["overlay_width"], config["overlay_height"]
+            ),
+            status_overlay.hide(),
+        ),
+        "hide_overlay": status_overlay.hide,
+    }
+    if not show_settings_window(
+        config, _save_settings, MODEL_OPTIONS, actions
+    ):
+        notify("A janela de configuracoes ja esta aberta.")
+
+
+def on_copy_last_transcript(icon, item):
+    try:
+        text = LAST_TRANSCRIPT_PATH.read_text(encoding="utf-8").strip()
+    except OSError:
+        text = ""
+    if not text:
+        notify("Ainda nao ha um ditado salvo.")
+        return
+    if copy_to_clipboard_reliable(text):
+        notify("Ultimo ditado copiado. Use Ctrl+V onde quiser.")
+        status_overlay.set_state(
+            "done", "Último ditado copiado para a área de transferência.",
+            hide_after=2.5,
+        )
+    else:
+        status_overlay.set_state(
+            "error", "Não foi possível copiar o último ditado."
+        )
+
+
+def on_open_history(icon, item):
+    if not HISTORY_PATH.exists():
+        notify("Ainda nao ha historico para exibir.")
+        return
+    _open_path(HISTORY_PATH)
+
+
 # =====================================================================
 # SHUTDOWN
 # =====================================================================
@@ -1721,6 +2065,7 @@ def _do_shutdown():
             tray_icon.stop()
         except Exception:
             pass
+    status_overlay.stop()
 
     # Rede de seguranca: se o loop do pystray nao encerrar (ja aconteceu com
     # o tray "fantasma" preso no Explorer), forca a saida do processo.
@@ -1755,8 +2100,9 @@ def on_tray_quit(icon, item):
 # de mensagens morreu). Sem este monitor o app fica aberto e inerte, que era
 # justamente o que o usuario via. Aqui ele se conserta sozinho e, tao
 # importante quanto, deixa registrado no log que isso aconteceu.
-HEALTH_CHECK_SECONDS = 30
-HEARTBEAT_EVERY_CHECKS = 40   # ~20 min entre linhas de "ainda vivo"
+HEALTH_CHECK_SECONDS = 10
+HEARTBEAT_EVERY_CHECKS = 120   # ~20 min entre linhas de "ainda vivo"
+FALLBACK_RELOAD_EVERY_CHECKS = 6  # 1 min para reparar o hook antigo
 
 _health_thread = None
 
@@ -1774,7 +2120,17 @@ def _health_loop():
                 if inactive:
                     log(f"Atalhos inativos detectados ({', '.join(inactive)}); "
                         f"tentando registrar de novo")
+                    status_overlay.set_state(
+                        "error", "O atalho parou de responder. Tentando recuperar..."
+                    )
                     register_hotkeys()
+            elif (_hotkey_backend == "keyboard"
+                  and checks % FALLBACK_RELOAD_EVERY_CHECKS == 0):
+                # O hook antigo pode ser removido silenciosamente pelo Windows.
+                # Recriá-lo periodicamente limita o tempo em que o app fica
+                # aberto sem responder, caso o backend Win32 não esteja ativo.
+                log("Renovando preventivamente o atalho do backend alternativo")
+                register_hotkeys()
             if checks % HEARTBEAT_EVERY_CHECKS == 0:
                 log(f"Heartbeat: atalhos={_hotkey_backend}, gravando={is_recording}, "
                     f"transcrevendo={is_transcribing}")
@@ -1833,16 +2189,19 @@ def build_menu():
         for label, key in QUIT_KEY_OPTIONS
     ]
 
-    model_items = _radio_items(MODEL_OPTIONS, "model", change_model)
     language_items = _radio_items(LANGUAGE_OPTIONS, "language", change_language)
     insert_items = _radio_items(INSERT_MODE_OPTIONS, "insert_mode", change_insert_mode)
 
     return pystray.Menu(
         pystray.MenuItem(lambda item: f"SOLetrando ({config['model']} / {device})", None, enabled=False),
         pystray.Menu.SEPARATOR,
+        pystray.MenuItem("Iniciar / parar gravacao", lambda icon, item: toggle()),
+        pystray.MenuItem("Configuracoes...", on_open_settings),
+        pystray.MenuItem("Copiar ultimo ditado", on_copy_last_transcript),
+        pystray.MenuItem("Abrir historico", on_open_history),
+        pystray.Menu.SEPARATOR,
         pystray.MenuItem("Tecla de gravar", pystray.Menu(*toggle_items)),
         pystray.MenuItem("Tecla de encerrar", pystray.Menu(*quit_items)),
-        pystray.MenuItem("Modelo", pystray.Menu(*model_items)),
         pystray.MenuItem("Idioma", pystray.Menu(*language_items)),
         pystray.MenuItem("Insercao de texto", pystray.Menu(*insert_items)),
         pystray.Menu.SEPARATOR,
@@ -1851,10 +2210,7 @@ def build_menu():
             toggle_beep,
             checked=lambda item: config["beep_enabled"],
         ),
-        pystray.MenuItem("Abrir log", on_open_log),
         pystray.MenuItem("Abrir pasta", on_open_folder),
-        pystray.Menu.SEPARATOR,
-        pystray.MenuItem("Desinstalar SOLetrando...", on_uninstall),
         pystray.Menu.SEPARATOR,
         pystray.MenuItem("Encerrar", on_tray_quit),
     )
@@ -1935,8 +2291,10 @@ def main():
         rastro no log."""
         icon.visible = True
         log("Tray icon ativo")
+        status_overlay.start()
         register_hotkeys()
         start_health_monitor()
+        update_tray("idle")
 
     close_splash()
     tray_icon.run(setup=on_tray_ready)
