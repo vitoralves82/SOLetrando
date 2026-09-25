@@ -192,6 +192,7 @@ As configurações são salvas em `%LOCALAPPDATA%\Soletrando\soletrando_config.j
   "hotkey_quit": "ctrl+shift+q",
   "model": "large-v3-turbo",
   "language": "pt",
+  "speech_language": "pt",
   "beep_enabled": false,
   "insert_mode": "paste",
   "vocabulary": ["EnvironPact", "PROCLIM"],
@@ -223,10 +224,12 @@ Clique com o botão direito no ícone "S" na bandeja do sistema:
 - **Tecla de gravar** — escolher atalho de gravação (ScrollLock, F8, F9, F10, Pause, Ctrl+Shift+F, etc.)
 - **Tecla de encerrar** — escolher atalho para sair
 - **Idioma** — Português, Inglês, Espanhol ou detecção automática
+- **Idioma da leitura** — português por padrão, independente da transcrição
 - **Inserção de texto** — colar (rápido) ou digitar (compatível)
 - **Bip sonoro** — sinal sonoro ao iniciar/parar a gravação
 - **Configurações** — modelo, tamanho da prévia, vocabulário, ajuda e diagnóstico
 - **Copiar último ditado** — recuperar o último resultado na área de transferência
+- **Mostrar controles** — abrir a caixa com o botão **Ler**
 - **Abrir histórico** — consultar os ditados salvos localmente
 - **Abrir pasta** — abrir a pasta de dados (`%LOCALAPPDATA%\Soletrando`)
 - **Encerrar** — fechar o SOLetrando
@@ -239,6 +242,23 @@ O intervalo permitido é de 120 × 44 a 1000 × 600 pixels. Abaixo de 220 × 76
 pixels, ela se torna um indicador compacto e mostra somente o estado. Também é
 possível definir quando a caixa desaparece e fechá-la imediatamente pelo botão ×.
 
+### Leitura do texto selecionado
+
+1. Em qualquer aplicativo, destaque o texto que deseja ouvir.
+2. Se a caixa flutuante estiver oculta, use **Mostrar controles** no ícone da bandeja e volte a selecionar o texto.
+3. Clique em **Ler**. Use **Parar** para interromper a leitura.
+
+Também é possível selecionar um trecho da prévia do próprio SOLetrando. A leitura
+usa vozes locais do *Windows* e prefere **pt-BR** por padrão. O **Idioma da leitura**
+é independente da transcrição. Para outros idiomas escolhidos, procura uma voz
+instalada no idioma correspondente. Se não houver voz, exibe um aviso.
+
+Alguns aplicativos não oferecem a seleção ao recurso de acessibilidade do *Windows*.
+Nesse caso, o SOLetrando tenta copiar a seleção temporariamente e restaurar o
+texto que já estava na área de transferência. Se ela contiver somente imagem ou
+arquivo, ou formatos enriquecidos, a cópia alternativa não é feita. Para ter o botão visível, a caixa
+precisa ter pelo menos 220 × 76 pixels.
+
 ---
 
 ## Estrutura do Projeto
@@ -246,6 +266,8 @@ possível definir quando a caixa desaparece e fechá-la imediatamente pelo botã
 ```
 soletrando/
 ├── soletrando.py              # Script principal
+├── soletrando_speech.py       # Leitura local e captura da seleção
+├── soletrando_ui.py           # Interface flutuante e configurações
 ├── install.bat                # Instalador (wrapper)
 ├── install.py                 # Instalador (cria atalhos Desktop/Startup)
 ├── soletrando_startup.vbs     # Inicialização automática no Windows (VBS)
@@ -493,6 +515,7 @@ Settings are saved in `%LOCALAPPDATA%\Soletrando\soletrando_config.json`
   "hotkey_quit": "ctrl+shift+q",
   "model": "large-v3-turbo",
   "language": "pt",
+  "speech_language": "pt",
   "beep_enabled": false,
   "insert_mode": "paste",
   "vocabulary": ["EnvironPact", "PROCLIM"],
@@ -518,10 +541,12 @@ Right-click the "S" icon in the system tray:
 - **Iniciar / parar gravação** — start or stop recording from the menu
 - **Configurações** — model, preview size, vocabulary, help, and diagnostics
 - **Copiar último ditado** — restore the latest result to the clipboard
+- **Mostrar controles** — open the floating panel with **Ler**
 - **Abrir histórico** — read dictations saved locally
 - **Tecla de gravar** — choose recording hotkey (ScrollLock, F8, F9, F10, Pause, Ctrl+Shift+F, etc.)
 - **Tecla de encerrar** — choose quit hotkey
 - **Idioma** — Portuguese, English, Spanish or auto-detect
+- **Idioma da leitura** — speech language, Portuguese by default
 - **Inserção de texto** — paste (fast) or type (compatible)
 - **Abrir pasta** — open the installation folder
 - **Encerrar** — quit SOLetrando
@@ -533,6 +558,22 @@ its title. Its size is shown live while editing. The allowed range is 120 × 44
 to 1000 × 600 pixels. Below 220 × 76 pixels, it becomes a compact status-only
 indicator. Users can control when it disappears or close it immediately with
 the × button.
+
+### Read selected text aloud
+
+1. Highlight the text you want to hear in any application.
+2. If the floating panel is hidden, choose **Mostrar controles** from the tray icon, then select the text again.
+3. Click **Ler**. Click **Parar** to stop playback.
+
+You can also select part of SOLetrando's own preview. Speech uses locally
+installed Windows voices and prefers **pt-BR** by default. Speech language is
+independent of dictation language. For other selected languages, it looks for a matching
+installed voice and displays an error if none is available.
+
+If an application does not expose its selection to Windows accessibility, the
+app temporarily copies the selection and restores the previous clipboard text.
+This fallback is skipped when the clipboard contains an image, file, or rich formats.
+The floating panel must be at least 220 × 76 pixels to show the button.
 
 ---
 
