@@ -13,7 +13,7 @@ DEFAULT_CONFIG = {
     "hotkey_toggle": "scroll lock",
     "hotkey_quit": "ctrl+shift+q",
     # Atalho global para ler em voz alta o texto selecionado. "" desativa.
-    "hotkey_read": "ctrl+alt+l",
+    "hotkey_read": "ctrl+alt+a",
     # large-v3-turbo: 809M params (praticamente o tamanho do medium) com
     # precisao de classe "large" e varias vezes mais rapido. Torna o medium
     # obsoleto em qualidade e velocidade.
@@ -61,6 +61,7 @@ HOTKEY_OPTIONS = [
 
 READ_KEY_OPTIONS = [
     ("Desativado", ""),
+    ("Ctrl+Alt+A", "ctrl+alt+a"),
     ("Ctrl+Alt+L", "ctrl+alt+l"),
     ("Ctrl+Alt+R", "ctrl+alt+r"),
     ("Ctrl+Shift+L", "ctrl+shift+l"),

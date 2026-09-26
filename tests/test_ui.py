@@ -29,7 +29,7 @@ class SettingsHelpersTests(unittest.TestCase):
         values = {
             "hotkey_toggle": "scroll lock",
             "hotkey_quit": "ctrl+shift+q",
-            "hotkey_read": "ctrl+alt+l",
+            "hotkey_read": "ctrl+alt+a",
             "overlay_width": 320,
             "overlay_height": 110,
         }

@@ -58,6 +58,14 @@ class SanitizeConfigTests(unittest.TestCase):
     def test_reading_hotkey_can_be_disabled(self):
         self.assertEqual(sanitize_config({"hotkey_read": ""})["hotkey_read"], "")
 
+    def test_default_reading_hotkey_and_previous_choice_is_kept(self):
+        self.assertEqual(sanitize_config({})["hotkey_read"], "ctrl+alt+a")
+        # Quem ja salvou Ctrl+Alt+L continua com a escolha anterior.
+        self.assertEqual(
+            sanitize_config({"hotkey_read": "ctrl+alt+l"})["hotkey_read"],
+            "ctrl+alt+l",
+        )
+
 
 class ConfigLogTests(unittest.TestCase):
     def test_log_summary_omits_vocabulary_and_corrections(self):

@@ -453,7 +453,7 @@ GUIDE_TEXT = (
     "4. Pressione a mesma tecla para concluir. O texto é inserido no campo.\n\n"
     "LER UM TEXTO EM VOZ ALTA\n"
     "Selecione o texto em qualquer programa e pressione a tecla de leitura "
-    "(padrão: Ctrl+Alt+L). Pressione de novo para parar. Também é possível "
+    "(padrão: Ctrl+Alt+A). Pressione de novo para parar. Também é possível "
     "selecionar um trecho na caixa flutuante e clicar em Ler.\n\n"
     "SE A SELEÇÃO NÃO FOR LIDA\n"
     "Alguns programas não informam a seleção ao Windows. Nesses casos o "
