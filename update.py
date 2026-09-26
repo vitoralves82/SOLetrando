@@ -37,6 +37,44 @@ def get_local_version():
     return "0.0.0"
 
 
+def parse_version(value):
+    """'v1.2.3' -> (1, 2, 3). Devolve None para textos que nao sao versao.
+
+    Aceita de uma a tres partes numericas ("1.2" vira (1, 2, 0)). Sufixos como
+    "-beta" sao recusados: sem uma regra de pre-lancamento, e mais seguro nao
+    oferecer a atualizacao do que adivinhar a ordem.
+    """
+    text = str(value or "").strip()
+    if text[:1] in ("v", "V"):
+        text = text[1:]
+    parts = text.split(".")
+    if not 1 <= len(parts) <= 3 or not all(part.isdigit() for part in parts):
+        return None
+    numbers = [int(part) for part in parts]
+    return tuple(numbers + [0] * (3 - len(numbers)))
+
+
+def is_newer_version(remote, local):
+    """True somente quando a versao publicada e posterior a local.
+
+    A comparacao anterior (remote == local) oferecia como "nova" qualquer
+    versao diferente, inclusive uma mais antiga: com 1.1.2 instalada e 1.0.0
+    publicada, o atualizador propunha voltar para 1.0.0.
+    Uma versao local ilegivel conta como 0.0.0 (instalacao sem version.txt);
+    uma versao remota ilegivel nunca e oferecida.
+    """
+    remote_parsed = parse_version(remote)
+    if remote_parsed is None:
+        return False
+    local_parsed = parse_version(local) or (0, 0, 0)
+    return remote_parsed > local_parsed
+
+
+def is_source_checkout(directory):
+    """Pasta de codigo-fonte clonada do Git: atualizar por ZIP a misturaria."""
+    return (Path(directory) / ".git").exists()
+
+
 def get_latest_release():
     req = Request(API_URL, headers={
         "Accept": "application/vnd.github+json",
@@ -190,6 +228,14 @@ def main():
     print("=" * 50)
     print()
 
+    if is_source_checkout(BASE_DIR):
+        # O ZIP publicado contem o executavel, nao o codigo. Extrai-lo aqui
+        # sobrescreveria README, install.py e version.txt do repositorio.
+        print("  Esta pasta e uma copia do codigo-fonte (Git).")
+        print("  Atualize com: git pull")
+        input("\nPressione Enter para sair...")
+        return
+
     local_ver = get_local_version()
     print(f"  Versao local:  {local_ver}")
     print("  Verificando GitHub...", end=" ", flush=True)
@@ -204,8 +250,16 @@ def main():
     print(f"{remote_ver}")
     print()
 
-    if remote_ver == local_ver:
+    if parse_version(remote_ver) is None:
+        print(f"  Versao publicada nao reconhecida ({remote_ver!r}).")
+        print("  Nenhuma alteracao foi feita.")
+        input("\nPressione Enter para sair...")
+        return
+
+    if not is_newer_version(remote_ver, local_ver):
         print("  Voce ja esta na versao mais recente!")
+        if parse_version(local_ver) and parse_version(remote_ver) < parse_version(local_ver):
+            print(f"  (A versao instalada, {local_ver}, e mais nova que a publicada.)")
         input("\nPressione Enter para sair...")
         return
 
