@@ -36,7 +36,6 @@ from soletrando_config import (
     QUIT_KEY_OPTIONS,
     READ_KEY_OPTIONS,
     SPEECH_LANGUAGE_OPTIONS,
-    SPEECH_RATE_OPTIONS,
     VALID_MODEL_KEYS,
     describe_config_for_log,
     is_valid_language,
@@ -2054,7 +2053,7 @@ VOICE_SAMPLES = {
 }
 
 
-def test_voice(language, rate):
+def play_voice_sample(language, rate):
     """Le uma frase curta com o idioma e a velocidade ainda nao salvos."""
     if is_recording or is_transcribing:
         return
@@ -2081,7 +2080,7 @@ def on_open_settings(icon, item):
         "uninstall": lambda: on_uninstall(None, None),
         "clear_history": clear_history_files,
         "clear_log": clear_log_files,
-        "test_voice": test_voice,
+        "test_voice": play_voice_sample,
         "preview_overlay": lambda width, height: (
             status_overlay.configure(width, height),
             status_overlay.set_state(

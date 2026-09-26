@@ -514,7 +514,6 @@ def show_settings_window(config, on_save, model_options=None, actions=None,
             muted = "#667085"
             amber = "#F2BC2E"
             amber_dark = "#D59B00"
-            border = "#D9DEE7"
             root.configure(bg=background)
 
             style = ttk.Style(root)
