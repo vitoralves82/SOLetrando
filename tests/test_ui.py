@@ -1,3 +1,7 @@
+import json
+import subprocess
+import sys
+import textwrap
 import unittest
 
 from soletrando_ui import (
@@ -106,6 +110,89 @@ class VoiceChoicesTests(unittest.TestCase):
         self.assertEqual(
             voice_choices(None, "pt", "Microsoft Francisca"),
             [(AUTO_VOICE_LABEL, ""), ("Microsoft Francisca", "Microsoft Francisca")],
+        )
+
+
+@unittest.skipUnless(sys.platform == "win32", "Requer janelas do Windows")
+class SettingsWindowTests(unittest.TestCase):
+    def test_voice_and_rate_save_with_existing_overlay_root(self):
+        script = textwrap.dedent('''
+            import json
+            import os
+            import time
+            import tkinter as tk
+            from tkinter import ttk
+            from soletrando_config import DEFAULT_CONFIG, MODEL_OPTIONS
+            from soletrando_ui import show_settings_window
+
+            overlay_root = tk.Tk()
+            overlay_root.withdraw()
+            original_tk = tk.Tk
+            chosen_voice = "Microsoft Francisca (Natural) - Portuguese (Brazil)"
+            saved = []
+
+            def descendants(widget):
+                for child in widget.winfo_children():
+                    yield child
+                    yield from descendants(child)
+
+            def settings_root(*args, **kwargs):
+                root = original_tk(*args, **kwargs)
+
+                def choose_and_save():
+                    boxes = [w for w in descendants(root)
+                             if isinstance(w, ttk.Combobox)]
+                    rate = next((b for b in boxes
+                                 if "Rápida (≈1,3×)" in b.cget("values")), None)
+                    voice = next((b for b in boxes
+                                  if chosen_voice in b.cget("values")), None)
+                    if rate is None or voice is None:
+                        root.after(100, choose_and_save)
+                        return
+                    rate.set("Rápida (≈1,3×)")
+                    voice.set(chosen_voice)
+                    save = next(w for w in descendants(root)
+                                if isinstance(w, ttk.Button)
+                                and w.cget("text") == "Salvar")
+                    save.invoke()
+
+                root.after(300, choose_and_save)
+                return root
+
+            tk.Tk = settings_root
+            show_settings_window(
+                dict(DEFAULT_CONFIG), saved.append,
+                model_options=MODEL_OPTIONS,
+                actions={"list_voices": lambda: [
+                    {"name": chosen_voice, "culture": "pt-BR"},
+                ]},
+            )
+            for _ in range(100):
+                overlay_root.update()
+                if saved:
+                    break
+                time.sleep(0.05)
+            print("RESULT=" + json.dumps({
+                "rate": saved[0]["speech_rate"] if saved else None,
+                "voice": saved[0]["speech_voices"].get("pt") if saved else None,
+            }), flush=True)
+            # Tk foi criado em duas threads; encerrar sem destruí-lo em outra.
+            os._exit(0 if saved else 2)
+        ''')
+        result = subprocess.run(
+            [sys.executable, "-c", script], capture_output=True,
+            text=True, timeout=12,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        marker = next(
+            line for line in result.stdout.splitlines()
+            if line.startswith("RESULT=")
+        )
+        saved = json.loads(marker.removeprefix("RESULT="))
+        self.assertEqual(saved["rate"], 2)
+        self.assertEqual(
+            saved["voice"],
+            "Microsoft Francisca (Natural) - Portuguese (Brazil)",
         )
 
 

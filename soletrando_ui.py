@@ -625,7 +625,9 @@ def show_settings_window(config, on_save, model_options=None, actions=None,
                 if icon_path:
                     icon_image = Image.open(icon_path).convert("RGBA")
                     icon_image = icon_image.resize((46, 46), Image.Resampling.LANCZOS)
-                    root._soletrando_header_icon = ImageTk.PhotoImage(icon_image)
+                    root._soletrando_header_icon = ImageTk.PhotoImage(
+                        icon_image, master=root
+                    )
                     tk.Label(
                         brand, image=root._soletrando_header_icon,
                         bg=background, borderwidth=0,
@@ -697,7 +699,7 @@ def show_settings_window(config, on_save, model_options=None, actions=None,
                 current_label = next(
                     label for label, value in options if value == current
                 )
-                variable = tk.StringVar(value=current_label)
+                variable = tk.StringVar(master=root, value=current_label)
                 ttk.Label(tab, text=text).grid(
                     row=row, column=0, sticky="w", pady=4, padx=(0, 16)
                 )
@@ -749,8 +751,10 @@ def show_settings_window(config, on_save, model_options=None, actions=None,
                 "terminais e campos que bloqueiam a colagem.",
                 9, top=2,
             )
-            preview_var = tk.BooleanVar(value=snapshot["live_preview_enabled"])
-            beep_var = tk.BooleanVar(value=snapshot["beep_enabled"])
+            preview_var = tk.BooleanVar(
+                master=root, value=snapshot["live_preview_enabled"]
+            )
+            beep_var = tk.BooleanVar(master=root, value=snapshot["beep_enabled"])
             ttk.Checkbutton(
                 tab, text="Mostrar prévia do texto durante o ditado",
                 variable=preview_var,
@@ -784,8 +788,8 @@ def show_settings_window(config, on_save, model_options=None, actions=None,
                 "options": {},
                 "loading": False,
             }
-            voice_var = tk.StringVar()
-            voice_status_var = tk.StringVar()
+            voice_var = tk.StringVar(master=root)
+            voice_status_var = tk.StringVar(master=root)
 
             def remember_voice():
                 value = voice_state["options"].get(voice_var.get())
@@ -893,6 +897,11 @@ def show_settings_window(config, on_save, model_options=None, actions=None,
                 tab, 6, "Velocidade da voz", SPEECH_RATE_OPTIONS,
                 snapshot["speech_rate"],
             )
+            hint(
+                tab,
+                "Os fatores são aproximados e variam conforme a voz.",
+                7, top=2, bottom=0,
+            )
 
             def test_voice():
                 callback = actions.get("test_voice")
@@ -900,7 +909,7 @@ def show_settings_window(config, on_save, model_options=None, actions=None,
                     callback(get_speech_language(), get_speech_rate(), get_voice())
 
             voice_buttons = ttk.Frame(tab)
-            voice_buttons.grid(row=7, column=1, sticky="w", pady=(8, 4))
+            voice_buttons.grid(row=8, column=1, sticky="w", pady=(8, 4))
             test_button = ttk.Button(
                 voice_buttons, text="Ouvir exemplo", command=test_voice
             )
@@ -917,7 +926,7 @@ def show_settings_window(config, on_save, model_options=None, actions=None,
                 "Windows > Hora e idioma > Fala > Adicionar vozes e clique em "
                 "Atualizar lista. A lista mostra as vozes SAPI 5, as mesmas "
                 "de Painel de Controle > Fala.",
-                8, top=10,
+                9, top=10,
             )
             fill_voices()
             if "list_voices" in actions:
@@ -961,8 +970,12 @@ def show_settings_window(config, on_save, model_options=None, actions=None,
 
             # ---------------- Caixa flutuante ----------------
             tab = tabs["overlay"]
-            width_var = tk.StringVar(value=str(snapshot["overlay_width"]))
-            height_var = tk.StringVar(value=str(snapshot["overlay_height"]))
+            width_var = tk.StringVar(
+                master=root, value=str(snapshot["overlay_width"])
+            )
+            height_var = tk.StringVar(
+                master=root, value=str(snapshot["overlay_height"])
+            )
             recording_options = {
                 "Durante todo o ditado": 0.0,
                 "1 segundo": 1.0,
@@ -986,12 +999,14 @@ def show_settings_window(config, on_save, model_options=None, actions=None,
                 return fallback
 
             recording_time_var = tk.StringVar(
+                master=root,
                 value=label_for(
                     recording_options, snapshot["overlay_recording_seconds"],
                     "Durante todo o ditado",
                 )
             )
             done_time_var = tk.StringVar(
+                master=root,
                 value=label_for(
                     done_options, snapshot["overlay_done_seconds"], "1 segundo"
                 )
@@ -1069,9 +1084,13 @@ def show_settings_window(config, on_save, model_options=None, actions=None,
 
             # ---------------- Privacidade ----------------
             tab = tabs["privacy"]
-            history_var = tk.BooleanVar(value=snapshot["save_history"])
-            log_var = tk.BooleanVar(value=snapshot["log_transcripts"])
-            clipboard_var = tk.BooleanVar(value=snapshot["clipboard_private"])
+            history_var = tk.BooleanVar(
+                master=root, value=snapshot["save_history"]
+            )
+            log_var = tk.BooleanVar(master=root, value=snapshot["log_transcripts"])
+            clipboard_var = tk.BooleanVar(
+                master=root, value=snapshot["clipboard_private"]
+            )
             section(tab, "Opções", 0)
             ttk.Checkbutton(
                 tab, text="Guardar histórico local dos ditados",

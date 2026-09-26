@@ -86,6 +86,36 @@ def uia_result(text=None):
 
 
 class SelectedTextTests(unittest.TestCase):
+    def test_windows_clipboard_markers_keep_text_fallback_available(self):
+        names = {
+            49717: "CanIncludeInClipboardHistory",
+            49718: "CanUploadToCloudClipboard",
+            49719: "HTML Format",
+            49720: "Chromium internal source RFH token",
+            49721: "Chromium internal source URL",
+        }
+
+        def get_name(fmt, buffer, _size):
+            buffer.value = names[fmt]
+            return len(buffer.value)
+
+        user32 = types.SimpleNamespace(
+            GetClipboardFormatNameW=mock.Mock(side_effect=get_name)
+        )
+        with mock.patch.object(
+            soletrando_speech.ctypes, "windll",
+            types.SimpleNamespace(user32=user32), create=True,
+        ):
+            self.assertTrue(soletrando_speech._is_plain_text_clipboard(
+                [CF_UNICODETEXT, 49717, 49718]
+            ))
+            self.assertTrue(soletrando_speech._is_plain_text_clipboard(
+                [CF_UNICODETEXT, 49720, 49721]
+            ))
+            self.assertFalse(soletrando_speech._is_plain_text_clipboard(
+                [CF_UNICODETEXT, 49717, 49719]
+            ))
+
     def run_selected_text(self, clipboard, uia, copy_selection=None, restore=True):
         restored = []
 

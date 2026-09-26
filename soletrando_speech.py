@@ -15,12 +15,25 @@ _SELECTION_SCRIPT = r"""
 Add-Type -AssemblyName UIAutomationClient
 $element = [System.Windows.Automation.AutomationElement]::FocusedElement
 if ($null -eq $element) { exit 2 }
-$pattern = $null
-if (-not $element.TryGetCurrentPattern([System.Windows.Automation.TextPattern]::Pattern, [ref]$pattern)) { exit 2 }
-$ranges = $pattern.GetSelection()
-$text = ($ranges | ForEach-Object { $_.GetText(-1) }) -join "`n"
-if ([string]::IsNullOrWhiteSpace($text)) { exit 2 }
-[Console]::Write([Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($text)))
+$walker = [System.Windows.Automation.TreeWalker]::ControlViewWalker
+for ($depth = 0; $null -ne $element -and $depth -lt 16; $depth++) {
+    try {
+        $pattern = $null
+        if ($element.TryGetCurrentPattern([System.Windows.Automation.TextPattern]::Pattern, [ref]$pattern)) {
+            $ranges = $pattern.GetSelection()
+            $text = ($ranges | ForEach-Object { $_.GetText(-1) }) -join "`n"
+            if (-not [string]::IsNullOrWhiteSpace($text)) {
+                [Console]::Write([Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($text)))
+                exit 0
+            }
+        }
+        $element = $walker.GetParent($element)
+    } catch {
+        # Alguns provedores falham ao consultar a selecao; tente o elemento pai.
+        try { $element = $walker.GetParent($element) } catch { break }
+    }
+}
+exit 2
 """
 
 # Codigos de saida do processo de voz: sem voz no idioma pedido; e leitura
@@ -249,7 +262,11 @@ def _is_plain_text_clipboard(formats):
             continue
         name = ctypes.create_unicode_buffer(128)
         user32.GetClipboardFormatNameW(fmt, name, len(name))
-        if name.value not in {"DataObject", "Ole Private Data"}:
+        if name.value not in {
+            "DataObject", "Ole Private Data",
+            "CanIncludeInClipboardHistory", "CanUploadToCloudClipboard",
+            "Chromium internal source RFH token", "Chromium internal source URL",
+        }:
             return False
     return True
 

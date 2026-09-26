@@ -95,12 +95,12 @@ SPEECH_LANGUAGE_OPTIONS = [
 ]
 
 SPEECH_RATE_OPTIONS = [
-    ("Bem devagar", -4),
-    ("Devagar", -2),
-    ("Normal", 0),
-    ("Rápida", 2),
-    ("Bem rápida", 4),
-    ("Muito rápida", 6),
+    ("Bem devagar (≈0,7×)", -4),
+    ("Devagar (≈0,85×)", -2),
+    ("Normal (1,0×)", 0),
+    ("Rápida (≈1,3×)", 2),
+    ("Bem rápida (≈1,7×)", 4),
+    ("Muito rápida (≈2,1×)", 6),
 ]
 
 QUIT_KEY_OPTIONS = [

@@ -107,6 +107,8 @@ Se o texto não chegar ao destino, ele continua na área de transferência (Ctrl
 
 Também é possível selecionar um trecho na caixa flutuante e clicar em **Ler**. Em **Configurações > Leitura** você escolhe idioma, voz e velocidade e ouve um exemplo. Se faltar voz no idioma, o aviso indica onde instalá-la no *Windows* (Configurações > Hora e idioma > Fala).
 
+As opções de velocidade mostram fatores aproximados, como **Rápida (≈1,3×)**. A velocidade real depende da voz instalada.
+
 **Escolha da voz**
 
 - A lista mostra as vozes SAPI 5 do idioma, as mesmas de Painel de Controle > Fala. As vozes do Brasil aparecem primeiro.
@@ -387,6 +389,8 @@ If the text does not reach the target, it stays on the clipboard (Ctrl+V) and un
 2. Press **Ctrl+Alt+A** (or your chosen hotkey). Press again to stop.
 
 You can also select part of the floating panel's text and click **Ler** (Read). Under **Configurações > Leitura** you choose the language, voice, and speed and can play a sample. If no voice is installed for that language, the warning explains where to add one in Windows (Settings > Time & language > Speech).
+
+Speed options show approximate factors, such as **Rápida (≈1,3×)**. Actual speed depends on the installed voice.
 
 **Choosing the voice**
 
