@@ -6,13 +6,19 @@ no Linux nem na verificacao automatica; aqui validamos a logica em volta dela.
 
 import base64
 import json
+import os
+import subprocess
+import tempfile
 import threading
 import types
 import unittest
 from unittest import mock
 
 import soletrando_speech
-from soletrando_speech import NO_VOICE_ERROR, SpeechReader, selected_text
+from soletrando_speech import (
+    NO_VOICE_ERROR, VOICE_FALLBACK_NOTICE, SpeechReader, is_online_voice,
+    list_voices, parse_voice_list, selected_text, voices_for_language,
+)
 
 
 CF_UNICODETEXT = 13
@@ -216,7 +222,7 @@ class FakeProcess:
 
 
 class SpeechReaderTests(unittest.TestCase):
-    def speak(self, process, text="Olá, mundo", language="pt", rate=0):
+    def speak(self, process, text="Olá, mundo", language="pt", rate=0, voice=""):
         done = threading.Event()
         results = []
 
@@ -230,18 +236,37 @@ class SpeechReaderTests(unittest.TestCase):
         )
         patch.start()
         self.addCleanup(patch.stop)
-        reader.speak(text, language, rate)
+        reader.speak(text, language, rate, voice)
         return reader, done, results
 
-    def test_request_carries_text_language_and_rate(self):
+    def test_request_carries_text_language_voice_and_rate(self):
         process = FakeProcess()
-        _reader, done, results = self.speak(process, "Ação rápida", "pt", 2)
+        _reader, done, results = self.speak(
+            process, "Ação rápida", "pt", 2, "Microsoft Francisca"
+        )
         self.assertTrue(done.wait(5))
         self.assertEqual(results, [(True, "")])
         request = json.loads(process.received.decode("utf-8"))
         self.assertEqual(
-            request, {"text": "Ação rápida", "language": "pt", "rate": 2}
+            request,
+            {
+                "text": "Ação rápida", "language": "pt", "culture": "pt-BR",
+                "voice": "Microsoft Francisca", "rate": 2,
+            },
         )
+
+    def test_automatic_voice_sends_empty_name(self):
+        process = FakeProcess()
+        _reader, done, _results = self.speak(process, language="en")
+        self.assertTrue(done.wait(5))
+        request = json.loads(process.received.decode("utf-8"))
+        self.assertEqual((request["voice"], request["culture"]), ("", "en"))
+
+    def test_missing_chosen_voice_reads_with_notice(self):
+        process = FakeProcess(returncode=4)
+        _reader, done, results = self.speak(process, voice="Voz removida")
+        self.assertTrue(done.wait(5))
+        self.assertEqual(results, [(True, VOICE_FALLBACK_NOTICE)])
 
     def test_missing_voice_is_reported_with_its_own_error(self):
         process = FakeProcess(returncode=3, stderr=b"Nenhuma voz instalada para es")
@@ -269,12 +294,170 @@ class SpeechReaderTests(unittest.TestCase):
     def test_stop_when_idle_reports_nothing_to_stop(self):
         self.assertFalse(SpeechReader().stop())
 
-    def test_speak_script_applies_rate_and_no_voice_exit_code(self):
-        self.assertIn("$voice.Rate = $rate", soletrando_speech._SPEAK_SCRIPT)
+    def test_speak_script_applies_rate_voice_and_exit_codes(self):
+        script = soletrando_speech._SPEAK_SCRIPT
+        self.assertIn("$speaker.Rate = $rate", script)
+        self.assertIn("$speaker.Voice = $chosen.token", script)
+        self.assertIn(f"exit {soletrando_speech.NO_VOICE_EXIT_CODE}", script)
         self.assertIn(
-            f"exit {soletrando_speech.NO_VOICE_EXIT_CODE}",
-            soletrando_speech._SPEAK_SCRIPT,
+            f"exit {soletrando_speech.VOICE_FALLBACK_EXIT_CODE}", script
         )
+        # Texto como "<b>" deve ser lido, nao tratado como marcacao do SAPI.
+        self.assertIn("$speaker.Speak([string]$request.text, 16)", script)
+
+
+def encoded_voices(value):
+    return base64.b64encode(json.dumps(value).encode("utf-8"))
+
+
+VOICES = [
+    {"name": "Microsoft Zira Desktop - English (United States)", "culture": "en-US"},
+    {"name": "Microsoft Helia - Portuguese (Portugal)", "culture": "pt-PT"},
+    {"name": "Microsoft Maria Desktop - Portuguese(Brazil)", "culture": "pt-BR"},
+    {"name": "Microsoft Francisca (Natural) - Portuguese (Brazil)", "culture": "pt-BR"},
+    {"name": "Microsoft Thalita Online (Natural) - Portuguese (Brazil)", "culture": "pt-BR"},
+]
+
+
+class VoiceListTests(unittest.TestCase):
+    def test_parse_keeps_order_and_drops_invalid_or_repeated(self):
+        raw = encoded_voices([
+            {"name": "Voz A", "culture": "pt-BR"},
+            {"name": "  ", "culture": "pt-BR"},
+            "texto solto",
+            {"name": "Voz A", "culture": "pt-BR"},
+            {"name": "Voz B"},
+        ])
+        self.assertEqual(
+            parse_voice_list(raw),
+            [
+                {"name": "Voz A", "culture": "pt-BR"},
+                {"name": "Voz B", "culture": ""},
+            ],
+        )
+
+    def test_parse_accepts_single_object_and_rejects_garbage(self):
+        self.assertEqual(
+            parse_voice_list(encoded_voices({"name": "Única", "culture": "pt-BR"})),
+            [{"name": "Única", "culture": "pt-BR"}],
+        )
+        self.assertEqual(parse_voice_list(b"nao-e-base64!"), [])
+        self.assertEqual(parse_voice_list(encoded_voices("texto")), [])
+
+    def test_brazilian_voices_come_first_for_portuguese(self):
+        names = [voice["name"] for voice in voices_for_language(VOICES, "pt")]
+        self.assertEqual(
+            names,
+            [
+                "Microsoft Maria Desktop - Portuguese(Brazil)",
+                "Microsoft Francisca (Natural) - Portuguese (Brazil)",
+                "Microsoft Thalita Online (Natural) - Portuguese (Brazil)",
+                "Microsoft Helia - Portuguese (Portugal)",
+            ],
+        )
+
+    def test_other_languages_match_by_prefix(self):
+        self.assertEqual(
+            [voice["culture"] for voice in voices_for_language(VOICES, "en")],
+            ["en-US"],
+        )
+        self.assertEqual(voices_for_language(VOICES, "es"), [])
+        self.assertEqual(voices_for_language(None, "pt"), [])
+
+    def test_online_voices_are_identified_by_name(self):
+        self.assertTrue(is_online_voice(VOICES[4]["name"]))
+        self.assertFalse(is_online_voice(VOICES[3]["name"]))
+
+    def test_list_voices_reads_the_script_output(self):
+        result = types.SimpleNamespace(
+            returncode=0, stdout=encoded_voices(VOICES[:1]) + b"\r\n"
+        )
+        with mock.patch.object(soletrando_speech.os, "name", "nt"), \
+                mock.patch.object(
+                    soletrando_speech.subprocess, "run", return_value=result
+                ):
+            self.assertEqual(list_voices(), VOICES[:1])
+
+    def test_list_voices_failures_return_empty(self):
+        failed = types.SimpleNamespace(returncode=1, stdout=b"")
+        with mock.patch.object(soletrando_speech.os, "name", "nt"):
+            with mock.patch.object(
+                soletrando_speech.subprocess, "run", return_value=failed
+            ):
+                self.assertEqual(list_voices(), [])
+            with mock.patch.object(
+                soletrando_speech.subprocess, "run",
+                side_effect=subprocess.TimeoutExpired("powershell", 20),
+            ):
+                self.assertEqual(list_voices(), [])
+        with mock.patch.object(soletrando_speech.os, "name", "posix"):
+            self.assertEqual(list_voices(), [])
+
+
+@unittest.skipUnless(os.name == "nt", "SAPI 5 so existe no Windows")
+class WindowsSapiTests(unittest.TestCase):
+    """Executa os scripts reais contra o SAPI 5 do Windows da verificacao."""
+
+    def run_script(self, script, request=None):
+        return subprocess.run(
+            soletrando_speech._powershell(script),
+            input=json.dumps(request).encode("utf-8") if request else None,
+            capture_output=True, timeout=120,
+        )
+
+    def test_list_script_returns_valid_voice_list(self):
+        result = self.run_script(soletrando_speech._LIST_VOICES_SCRIPT)
+        self.assertEqual(
+            result.returncode, 0, result.stderr.decode("utf-8", "replace")
+        )
+        raw = result.stdout.strip()
+        json.loads(base64.b64decode(raw).decode("utf-8"))
+        voices = parse_voice_list(raw)
+        for voice in voices:
+            self.assertTrue(voice["name"])
+
+    def speak_to_file(self, **request):
+        with tempfile.TemporaryDirectory() as folder:
+            wav = os.path.join(folder, "voz.wav")
+            request = dict(
+                {"text": "Teste <b> & ação", "rate": 0, "wav": wav}, **request
+            )
+            result = self.run_script(soletrando_speech._SPEAK_SCRIPT, request)
+            size = os.path.getsize(wav) if os.path.exists(wav) else 0
+        return result, size
+
+    def test_chosen_voice_speaks_to_file(self):
+        voices = list_voices(timeout=120)
+        if not voices:
+            self.skipTest("Nenhuma voz SAPI 5 nesta maquina")
+        voice = voices[0]
+        language = (voice["culture"] or "en-US").split("-")[0]
+        result, size = self.speak_to_file(
+            language=language, culture=voice["culture"], voice=voice["name"]
+        )
+        self.assertEqual(
+            result.returncode, 0, result.stderr.decode("utf-8", "replace")
+        )
+        self.assertGreater(size, 1000)
+
+    def test_missing_voice_falls_back_or_reports_no_voice(self):
+        voices = list_voices(timeout=120)
+        if not voices:
+            self.skipTest("Nenhuma voz SAPI 5 nesta maquina")
+        language = (voices[0]["culture"] or "en-US").split("-")[0]
+        result, size = self.speak_to_file(
+            language=language, culture=voices[0]["culture"],
+            voice="Voz que nao existe",
+        )
+        self.assertEqual(
+            result.returncode, soletrando_speech.VOICE_FALLBACK_EXIT_CODE,
+            result.stderr.decode("utf-8", "replace"),
+        )
+        self.assertGreater(size, 1000)
+
+    def test_language_without_voice_exits_with_no_voice_code(self):
+        result, _size = self.speak_to_file(language="xx", culture="xx")
+        self.assertEqual(result.returncode, soletrando_speech.NO_VOICE_EXIT_CODE)
 
 
 if __name__ == "__main__":

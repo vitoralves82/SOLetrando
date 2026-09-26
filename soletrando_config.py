@@ -20,6 +20,9 @@ DEFAULT_CONFIG = {
     "model": "large-v3-turbo",
     "language": "pt",
     "speech_language": "pt",
+    # Voz escolhida por idioma da leitura, pelo nome exibido no Windows.
+    # Idioma ausente = primeira voz instalada do idioma (pt-BR para pt).
+    "speech_voices": {},
     # Velocidade da voz do Windows: -10 (lenta) a 10 (rapida); 0 = normal.
     "speech_rate": 0,
     "beep_enabled": False,
@@ -121,12 +124,33 @@ VALID_SPEECH_LANGUAGES = {key for _, key in SPEECH_LANGUAGE_OPTIONS}
 # Campos que podem aparecer no registro tecnico. Vocabulario, correcoes e
 # qualquer campo novo ficam de fora ate serem avaliados e incluidos aqui.
 TECHNICAL_LOG_KEYS = (
-    "model", "language", "speech_language", "speech_rate", "insert_mode",
+    "model", "language", "speech_language", "speech_voices", "speech_rate",
+    "insert_mode",
     "hotkey_toggle", "hotkey_quit", "hotkey_read", "beep_enabled",
     "live_preview_enabled", "save_history", "log_transcripts",
     "clipboard_private", "overlay_width", "overlay_height",
     "overlay_recording_seconds", "overlay_done_seconds",
 )
+
+
+MAX_VOICE_NAME_LENGTH = 200
+
+
+def normalize_speech_voices(value):
+    """Mantem apenas {idioma da leitura: nome de voz} validos."""
+    if not isinstance(value, dict):
+        return {}
+    voices = {}
+    for language, name in value.items():
+        if language not in VALID_SPEECH_LANGUAGES or not isinstance(name, str):
+            continue
+        name = name.strip()
+        if (
+            name and len(name) <= MAX_VOICE_NAME_LENGTH
+            and name.isprintable()
+        ):
+            voices[language] = name
+    return voices
 
 
 def is_valid_language(value):
@@ -169,6 +193,9 @@ def sanitize_config(cfg):
         normalized["language"] = DEFAULT_CONFIG["language"]
     if normalized.get("speech_language") not in VALID_SPEECH_LANGUAGES:
         normalized["speech_language"] = DEFAULT_CONFIG["speech_language"]
+    normalized["speech_voices"] = normalize_speech_voices(
+        normalized.get("speech_voices")
+    )
     if not isinstance(normalized.get("beep_enabled"), bool):
         normalized["beep_enabled"] = DEFAULT_CONFIG["beep_enabled"]
     if normalized.get("insert_mode") not in VALID_INSERT_MODES:
