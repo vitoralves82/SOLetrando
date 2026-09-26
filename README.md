@@ -6,7 +6,7 @@
 
 Ditado e leitura por voz para *Windows*, gratuitos e executados no próprio computador, com [faster-whisper](https://github.com/SYSTRAN/faster-whisper) em GPU NVIDIA ou CPU.
 
-Pressione **Scroll Lock**, fale e pressione de novo: o texto aparece onde estiver o cursor (Word, navegador, bloco de notas, qualquer programa). Selecione um texto e pressione **Ctrl+Alt+L** para ouvi-lo em voz alta.
+Pressione **Scroll Lock**, fale e pressione de novo: o texto aparece onde estiver o cursor (Word, navegador, bloco de notas, qualquer programa). Selecione um texto e pressione **Ctrl+Alt+A** para ouvi-lo em voz alta.
 
 ![Python](https://img.shields.io/badge/Python-3.10%2B-blue)
 ![CUDA](https://img.shields.io/badge/CUDA-opcional-green)
@@ -37,7 +37,7 @@ Pressione **Scroll Lock**, fale e pressione de novo: o texto aparece onde estive
 | Atalho | Ação |
 |---|---|
 | **Scroll Lock** | Iniciar ou concluir o ditado e inserir o texto |
-| **Ctrl+Alt+L** | Ler em voz alta o texto selecionado; pressionar de novo interrompe |
+| **Ctrl+Alt+A** | Ler em voz alta o texto selecionado; pressionar de novo interrompe |
 | **Ctrl+Shift+Q** | Encerrar o SOLetrando |
 
 Os três podem ser trocados em **Configurações** ou no menu do ícone da bandeja. A tecla de leitura também pode ser desativada. Atalhos globais valem em todos os programas; se uma combinação atrapalhar outro aplicativo, escolha outra.
@@ -103,7 +103,7 @@ Se o texto não chegar ao destino, ele continua na área de transferência (Ctrl
 ### Ler um texto em voz alta
 
 1. Selecione o texto em qualquer programa.
-2. Pressione **Ctrl+Alt+L** (ou a tecla escolhida). Pressione de novo para parar.
+2. Pressione **Ctrl+Alt+A** (ou a tecla escolhida). Pressione de novo para parar.
 
 Também é possível selecionar um trecho na caixa flutuante e clicar em **Ler**. Em **Configurações > Leitura** você escolhe idioma, velocidade e ouve um exemplo. Se faltar voz no idioma, o aviso indica onde instalá-la no *Windows* (Configurações > Hora e idioma > Fala).
 
@@ -258,7 +258,7 @@ MIT
 
 Free voice dictation and read-aloud for Windows that run on your own computer, powered by [faster-whisper](https://github.com/SYSTRAN/faster-whisper) on an NVIDIA GPU or the CPU.
 
-Press **Scroll Lock**, speak, press again: the text appears wherever the cursor is (Word, browser, Notepad, any app). Select some text and press **Ctrl+Alt+L** to hear it read aloud.
+Press **Scroll Lock**, speak, press again: the text appears wherever the cursor is (Word, browser, Notepad, any app). Select some text and press **Ctrl+Alt+A** to hear it read aloud.
 
 ---
 
@@ -283,7 +283,7 @@ Press **Scroll Lock**, speak, press again: the text appears wherever the cursor 
 | Hotkey | Action |
 |---|---|
 | **Scroll Lock** | Start or finish dictation and insert the text |
-| **Ctrl+Alt+L** | Read the selected text aloud; press again to stop |
+| **Ctrl+Alt+A** | Read the selected text aloud; press again to stop |
 | **Ctrl+Shift+Q** | Quit SOLetrando |
 
 All three can be changed in **Configurações** (Settings) or in the tray menu. The read-aloud hotkey can also be disabled. Global hotkeys apply to every program; if a combination conflicts with another app, pick a different one.
@@ -349,7 +349,7 @@ If the text does not reach the target, it stays on the clipboard (Ctrl+V) and un
 ### Read text aloud
 
 1. Select the text in any program.
-2. Press **Ctrl+Alt+L** (or your chosen hotkey). Press again to stop.
+2. Press **Ctrl+Alt+A** (or your chosen hotkey). Press again to stop.
 
 You can also select part of the floating panel's text and click **Ler** (Read). Under **Configurações > Leitura** you choose the voice language and speed and can play a sample. If no voice is installed for that language, the warning explains where to add one in Windows (Settings > Time & language > Speech).
 

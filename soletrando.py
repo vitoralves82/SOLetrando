@@ -2167,7 +2167,7 @@ def toggle_reading():
 
 
 def _copy_selection_with_keyboard():
-    # Com o atalho de leitura (ex.: Ctrl+Alt+L) ainda pressionado, o Ctrl+C
+    # Com o atalho de leitura (ex.: Ctrl+Alt+A) ainda pressionado, o Ctrl+C
     # viraria Ctrl+Alt+C no aplicativo de destino.
     wait_modifiers_released()
     keyboard.send("ctrl+c")
