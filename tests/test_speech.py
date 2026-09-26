@@ -86,6 +86,36 @@ def uia_result(text=None):
 
 
 class SelectedTextTests(unittest.TestCase):
+    def test_windows_clipboard_markers_keep_text_fallback_available(self):
+        names = {
+            49717: "CanIncludeInClipboardHistory",
+            49718: "CanUploadToCloudClipboard",
+            49719: "HTML Format",
+            49720: "Chromium internal source RFH token",
+            49721: "Chromium internal source URL",
+        }
+
+        def get_name(fmt, buffer, _size):
+            buffer.value = names[fmt]
+            return len(buffer.value)
+
+        user32 = types.SimpleNamespace(
+            GetClipboardFormatNameW=mock.Mock(side_effect=get_name)
+        )
+        with mock.patch.object(
+            soletrando_speech.ctypes, "windll",
+            types.SimpleNamespace(user32=user32), create=True,
+        ):
+            self.assertTrue(soletrando_speech._is_plain_text_clipboard(
+                [CF_UNICODETEXT, 49717, 49718]
+            ))
+            self.assertTrue(soletrando_speech._is_plain_text_clipboard(
+                [CF_UNICODETEXT, 49720, 49721]
+            ))
+            self.assertFalse(soletrando_speech._is_plain_text_clipboard(
+                [CF_UNICODETEXT, 49717, 49719]
+            ))
+
     def run_selected_text(self, clipboard, uia, copy_selection=None, restore=True):
         restored = []
 
@@ -204,14 +234,35 @@ class FakeProcess:
         self.returncode = None
         self.terminated = False
         self.received = None
+        self.writes = []
         self.started = threading.Event()
+        self.stdin = self
+        self.stdout = self
+        self.stderr = self
 
-    def communicate(self, data):
-        self.received = data
+    def write(self, data):
+        self.received = data.strip()
+        self.writes.append(self.received)
         self.started.set()
+        return len(data)
+
+    def flush(self):
+        pass
+
+    def close(self):
+        pass
+
+    def readline(self):
         self._release.wait(5)
         self.returncode = 1 if self.terminated else self._final_code
-        return b"", self._stderr
+        return b"DONE\n" if self.returncode in (0, 4) else b""
+
+    def read(self):
+        return self._stderr
+
+    def wait(self):
+        self.returncode = 1 if self.terminated else self._final_code
+        return self.returncode
 
     def poll(self):
         return self.returncode
@@ -293,6 +344,24 @@ class SpeechReaderTests(unittest.TestCase):
 
     def test_stop_when_idle_reports_nothing_to_stop(self):
         self.assertFalse(SpeechReader().stop())
+
+    def test_rate_change_reaches_next_chunk_without_restarting(self):
+        process = FakeProcess(block=True)
+        reader, done, results = self.speak(
+            process, text="Primeira frase. Segunda frase.", rate=0,
+        )
+        self.assertTrue(process.started.wait(5))
+        reader.set_rate(4)
+        process._release.set()
+        self.assertTrue(done.wait(5))
+        requests = [json.loads(raw) for raw in process.writes]
+        self.assertEqual([item["rate"] for item in requests], [0, 4])
+        self.assertEqual(results, [(True, "")])
+
+    def test_chunks_preserve_text_and_split_on_sentences(self):
+        chunks = soletrando_speech.speech_chunks("Olá, mundo! Como vai?")
+        self.assertEqual("".join(chunks), "Olá, mundo! Como vai?")
+        self.assertEqual(len(chunks), 2)
 
     def test_speak_script_applies_rate_voice_and_exit_codes(self):
         script = soletrando_speech._SPEAK_SCRIPT
@@ -439,6 +508,29 @@ class WindowsSapiTests(unittest.TestCase):
             result.returncode, 0, result.stderr.decode("utf-8", "replace")
         )
         self.assertGreater(size, 1000)
+
+    def test_stream_changes_rate_between_chunks(self):
+        voices = list_voices(timeout=120)
+        if not voices:
+            self.skipTest("Nenhuma voz SAPI 5 nesta maquina")
+        voice = voices[0]
+        with tempfile.TemporaryDirectory() as folder:
+            wav = os.path.join(folder, "trechos.wav")
+            first = {"text": "Primeira frase. ", "rate": 0, "wav": wav,
+                     "voice": voice["name"], "culture": voice["culture"],
+                     "language": (voice["culture"] or "en-US").split("-")[0]}
+            second = {"text": "Segunda frase.", "rate": 4}
+            result = subprocess.run(
+                soletrando_speech._powershell(
+                    soletrando_speech._STREAM_SPEAK_SCRIPT),
+                input=(json.dumps(first) + "\n" + json.dumps(second) + "\n")
+                      .encode("utf-8"),
+                capture_output=True, timeout=120,
+            )
+            self.assertEqual(result.returncode, 0,
+                             result.stderr.decode("utf-8", "replace"))
+            self.assertEqual(result.stdout.splitlines(), [b"DONE", b"DONE"])
+            self.assertGreater(os.path.getsize(wav), 1000)
 
     def test_missing_voice_falls_back_or_reports_no_voice(self):
         voices = list_voices(timeout=120)

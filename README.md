@@ -38,9 +38,13 @@ Pressione **Scroll Lock**, fale e pressione de novo: o texto aparece onde estive
 |---|---|
 | **Scroll Lock** | Iniciar ou concluir o ditado e inserir o texto |
 | **Ctrl+Alt+A** | Ler em voz alta o texto selecionado; pressionar de novo interrompe |
+| **Shift+F9** | Desacelerar a leitura um nível |
+| **Shift+F10** | Acelerar a leitura um nível |
 | **Ctrl+Shift+Q** | Encerrar o SOLetrando |
 
 Os três podem ser trocados em **Configurações** ou no menu do ícone da bandeja. A tecla de leitura também pode ser desativada. Atalhos globais valem em todos os programas; se uma combinação atrapalhar outro aplicativo, escolha outra.
+
+Para ditado e leitura, você pode manter uma sugestão ou digitar seu próprio atalho em **Configurações**. Aceitam-se **F1 a F12** isoladas ou combinações de duas ou três teclas com **Ctrl** ou **Alt**, como **Ctrl+K** e **Ctrl+Alt+K**. As sugestões antigas de uma tecla continuam disponíveis. **Salvar** aplica as mudanças sem fechar a janela; **Fechar** descarta apenas as alterações ainda não salvas.
 
 ---
 
@@ -100,12 +104,17 @@ Depois da opção B, execute `build.bat`. O executável fica em `dist\soletrando
 
 Se o texto não chegar ao destino, ele continua na área de transferência (Ctrl+V) e em **Copiar último ditado**.
 
+Em **Como inserir o texto**, **Colar** envia o resultado inteiro com Ctrl+V e costuma ser mais rápido. **Digitar compatível** simula a digitação de cada caractere, podendo funcionar em campos que bloqueiam colagem; leva mais tempo. Se a colagem falhar, o programa tenta digitar automaticamente.
+
 ### Ler um texto em voz alta
 
 1. Selecione o texto em qualquer programa.
 2. Pressione **Ctrl+Alt+A** (ou a tecla escolhida). Pressione de novo para parar.
 
 Também é possível selecionar um trecho na caixa flutuante e clicar em **Ler**. Em **Configurações > Leitura** você escolhe idioma, voz e velocidade e ouve um exemplo. Se faltar voz no idioma, o aviso indica onde instalá-la no *Windows* (Configurações > Hora e idioma > Fala).
+
+As opções de velocidade mostram fatores aproximados, como **Rápida (≈1,3×)**. A velocidade real depende da voz instalada.
+Durante uma leitura, os atalhos de velocidade aplicam a mudança no próximo trecho e também a guardam para leituras futuras. Você pode trocar os dois atalhos em **Configurações > Leitura**, inclusive por **F10** e **F11**. O ditado converte fala em texto e não reproduz áudio, por isso esses controles atuam na leitura.
 
 **Escolha da voz**
 
@@ -319,9 +328,13 @@ Press **Scroll Lock**, speak, press again: the text appears wherever the cursor 
 |---|---|
 | **Scroll Lock** | Start or finish dictation and insert the text |
 | **Ctrl+Alt+A** | Read the selected text aloud; press again to stop |
+| **Shift+F9** | Slow reading down by one level |
+| **Shift+F10** | Speed reading up by one level |
 | **Ctrl+Shift+Q** | Quit SOLetrando |
 
-All three can be changed in **Configurações** (Settings) or in the tray menu. The read-aloud hotkey can also be disabled. Global hotkeys apply to every program; if a combination conflicts with another app, pick a different one.
+The dictation, quit, and read-aloud hotkeys can be changed in **Configurações** (Settings) or in the tray menu. The speed hotkeys can be changed in **Configurações > Leitura**. The read-aloud and speed hotkeys can also be disabled. Global hotkeys apply to every program; if a combination conflicts with another app, pick a different one.
+
+For dictation and reading, keep a suggested hotkey or type your own under **Configurações**. Single **F1** through **F12** keys are accepted, as are two- or three-key combinations including **Ctrl** or **Alt**, such as **Ctrl+K** or **Ctrl+Alt+K**. Existing single-key suggestions remain available. **Salvar** (Save) applies changes while the window stays open; **Fechar** (Close) discards only unsaved edits.
 
 ---
 
@@ -381,12 +394,17 @@ After option B, run `build.bat`. The executable is written to `dist\soletrando\s
 
 If the text does not reach the target, it stays on the clipboard (Ctrl+V) and under **Copiar último ditado** (Copy last dictation).
 
+Under **Como inserir o texto** (How to insert text), **Colar** (Paste) sends the whole result with Ctrl+V and is usually faster. **Digitar compatível** (Compatible typing) simulates each character, which may work in fields that block pasting but takes longer. If pasting fails, the app tries typing automatically.
+
 ### Read text aloud
 
 1. Select the text in any program.
 2. Press **Ctrl+Alt+A** (or your chosen hotkey). Press again to stop.
 
 You can also select part of the floating panel's text and click **Ler** (Read). Under **Configurações > Leitura** you choose the language, voice, and speed and can play a sample. If no voice is installed for that language, the warning explains where to add one in Windows (Settings > Time & language > Speech).
+
+Speed options show approximate factors, such as **Rápida (≈1,3×)**. Actual speed depends on the installed voice.
+During reading, the speed hotkeys take effect on the next text chunk and are saved for future readings. Both shortcuts can be changed under **Configurações > Leitura**, including to **F10** and **F11**. Dictation converts speech to text and does not play audio, so these controls affect reading only.
 
 **Choosing the voice**
 
