@@ -12,6 +12,7 @@ COLORS = {
     "done": ("#EEF2F7", "#334155"),
     "error": ("#FDECEC", "#A12622"),
     "preview": ("#F7F8FA", "#D59B00"),
+    "reading": ("#EAF2FF", "#2563EB"),
 }
 
 
@@ -24,6 +25,12 @@ class StatusOverlay:
         self._ready = threading.Event()
         self._width = int(width)
         self._height = int(height)
+        self._read_selection = None
+        self._stop_reading = None
+
+    def set_reading_actions(self, read_selection, stop_reading):
+        self._read_selection = read_selection
+        self._stop_reading = stop_reading
 
     def start(self):
         if self._thread is not None and self._thread.is_alive():
@@ -89,6 +96,19 @@ class StatusOverlay:
             )
             close_button.pack(side="right")
 
+            stop_button = tk.Button(
+                header, text="Parar", font=("Segoe UI", 9), bg="#F7F8FA",
+                fg="#334155", relief="flat", borderwidth=0, takefocus=0,
+                command=lambda: self._stop_reading and self._stop_reading(),
+            )
+            stop_button.pack(side="right", padx=(0, 5))
+            read_button = tk.Button(
+                header, text="Ler", font=("Segoe UI Semibold", 9),
+                bg="#F2BC2E", fg="#111827", activebackground="#D59B00",
+                relief="flat", borderwidth=0, takefocus=0,
+            )
+            read_button.pack(side="right", padx=(0, 5))
+
             text_frame = tk.Frame(frame, bg="#F7F8FA")
             text_frame.pack(fill="both", expand=True, pady=(4, 0))
             detail = tk.Text(
@@ -107,6 +127,17 @@ class StatusOverlay:
             detail.pack(side="left", fill="both", expand=True)
             scrollbar.pack(side="right", fill="y", padx=(8, 0))
             detail.configure(state="disabled")
+
+            def read_selected():
+                selected = ""
+                try:
+                    selected = detail.get("sel.first", "sel.last")
+                except tk.TclError:
+                    pass
+                if self._read_selection:
+                    self._read_selection(selected)
+
+            read_button.configure(command=read_selected)
 
             def scroll_detail(event):
                 detail.yview_scroll(int(-event.delta / 120), "units")
@@ -143,12 +174,14 @@ class StatusOverlay:
                 "done": "Texto pronto",
                 "error": "Atenção necessária",
                 "preview": "Prévia de tamanho",
+                "reading": "Lendo seleção",
             }
 
             def update_title():
                 status = labels.get(current_state, current_state or "Pronto")
                 title.configure(
-                    text=status if compact_mode else f"SOLetrando  •  {status}"
+                    text=(status if compact_mode or self._width < 400
+                          else f"SOLetrando  •  {status}")
                 )
 
             def place_at_bottom_right(width, height):
@@ -160,12 +193,16 @@ class StatusOverlay:
                     compact_mode = new_compact_mode
                     if compact_mode:
                         text_frame.pack_forget()
+                        read_button.pack_forget()
+                        stop_button.pack_forget()
                         frame.configure(padx=8, pady=5)
                     else:
                         text_frame.pack(
                             fill="both", expand=True, pady=(4, 0)
                         )
                         frame.configure(padx=10, pady=6)
+                        stop_button.pack(side="right", padx=(0, 5))
+                        read_button.pack(side="right", padx=(0, 5))
                     update_title()
                 x = root.winfo_screenwidth() - logical_width - 16
                 y = root.winfo_screenheight() - logical_height - 48
@@ -291,9 +328,12 @@ class StatusOverlay:
                         close_button.configure(
                             bg=background, activebackground=background
                         )
+                        stop_button.configure(
+                            bg=background, activebackground=background
+                        )
                         detail.configure(bg=background)
                         set_text(message)
-                        if state_changed:
+                        if state_changed or force_show:
                             if hide_after is None:
                                 hide_deadline = None
                             elif hide_after <= 0:

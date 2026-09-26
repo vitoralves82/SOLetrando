@@ -31,6 +31,7 @@ from soletrando_text import (
 )
 from soletrando_audio import build_tone_wav
 from soletrando_ui import StatusOverlay, show_settings_window
+from soletrando_speech import SpeechReader, selected_text
 
 IS_WINDOWS = os.name == "nt"
 
@@ -184,6 +185,7 @@ DEFAULT_CONFIG = {
     # obsoleto em qualidade e velocidade.
     "model": "large-v3-turbo",
     "language": "pt",
+    "speech_language": "pt",
     "beep_enabled": False,
     # "paste" = Ctrl+V (instantaneo, unicode perfeito)
     # "type"  = simula digitacao tecla a tecla (compativel com terminais)
@@ -234,6 +236,12 @@ LANGUAGE_OPTIONS = [
     ("Deteccao automatica", ""),
 ]
 
+SPEECH_LANGUAGE_OPTIONS = [
+    ("Português (Brasil)", "pt"),
+    ("Inglês", "en"),
+    ("Espanhol", "es"),
+]
+
 QUIT_KEY_OPTIONS = [
     ("Ctrl+Shift+Q", "ctrl+shift+q"),
     ("Ctrl+Alt+Q", "ctrl+alt+q"),
@@ -281,6 +289,8 @@ def sanitize_config(cfg):
         normalized["model"] = DEFAULT_CONFIG["model"]
     if not is_valid_language(normalized.get("language")):
         normalized["language"] = DEFAULT_CONFIG["language"]
+    if normalized.get("speech_language") not in {"pt", "en", "es"}:
+        normalized["speech_language"] = DEFAULT_CONFIG["speech_language"]
     if not isinstance(normalized.get("beep_enabled"), bool):
         normalized["beep_enabled"] = DEFAULT_CONFIG["beep_enabled"]
     if normalized.get("insert_mode") not in VALID_INSERT_MODES:
@@ -655,6 +665,7 @@ watchdog_timer = None      # cancelado ao parar (antes vazava 1 thread/gravacao)
 status_overlay = StatusOverlay(
     config["overlay_width"], config["overlay_height"]
 )
+speech_reader = SpeechReader()
 _preview_thread = None
 _preview_text_by_session = {}
 _target_window_handle = None
@@ -1884,6 +1895,7 @@ def toggle():
                 return
 
             if not is_recording:
+                stop_reading()
                 start_recording()
                 return
 
@@ -1942,6 +1954,16 @@ def change_language(lang_key):
     save_config(config)
     log(f"Idioma alterado para '{lang_key or 'auto'}'")
     update_tray("idle")
+
+
+def change_speech_language(lang_key):
+    config["speech_language"] = lang_key
+    save_config(config)
+    rebuild_menu()
+    status_overlay.set_state(
+        "done", "Idioma da leitura atualizado.", hide_after=2.0,
+        force_show=True,
+    )
 
 
 def change_insert_mode(mode_key):
@@ -2024,6 +2046,98 @@ def on_copy_last_transcript(icon, item):
         )
 
 
+_reading_request_lock = threading.Lock()
+_reading_capture_lock = threading.Lock()
+_reading_request = 0
+
+
+def stop_reading():
+    global _reading_request
+    with _reading_request_lock:
+        _reading_request += 1
+    speech_reader.stop()
+    status_overlay.set_state(
+        "idle", "Leitura interrompida.", hide_after=2.0, force_show=True
+    )
+
+
+def read_selection(overlay_selection=""):
+    """Le texto destacado na previa ou no aplicativo que manteve o foco."""
+    global _reading_request
+    if is_recording or is_transcribing:
+        status_overlay.set_state(
+            "error", "Conclua a gravação ou transcrição antes de ler.",
+            hide_after=3.0, force_show=True,
+        )
+        return
+
+    with _reading_request_lock:
+        _reading_request += 1
+        request_id = _reading_request
+
+    def finished(ok, error):
+        if not ok:
+            log(f"Falha na leitura por voz: {error}")
+            status_overlay.set_state(
+                "error", "A voz do Windows não pôde ler o texto.",
+                hide_after=4.0, force_show=True,
+            )
+        else:
+            status_overlay.set_state(
+                "done", "Leitura concluída.", hide_after=2.0,
+                force_show=True,
+            )
+
+    def worker():
+        with _reading_capture_lock:
+            with _reading_request_lock:
+                if request_id != _reading_request:
+                    return
+            try:
+                text = overlay_selection.strip() or selected_text(
+                    copy_selection=lambda: keyboard.send("ctrl+c"),
+                    restore_text=copy_to_clipboard_reliable,
+                )
+            except Exception as e:
+                log(f"Falha ao obter selecao: {e}")
+                text = ""
+        with _reading_request_lock:
+            if request_id != _reading_request:
+                return
+        if not text:
+            status_overlay.set_state(
+                "error", "Não consegui ler a seleção. Tente copiar como texto simples.",
+                hide_after=4.0, force_show=True,
+            )
+            return
+        speech_reader._on_done = finished
+        status_overlay.set_state(
+            "reading", "Lendo o texto selecionado...",
+            force_show=True,
+        )
+        speech_reader.speak(text, config["speech_language"])
+
+    threading.Thread(target=worker, name="soletrando-selecao", daemon=True).start()
+
+
+def on_show_controls(icon, item):
+    if is_recording:
+        status_overlay.set_state(
+            "recording", "Gravando. Pressione o atalho para concluir.",
+            force_show=True,
+        )
+        return
+    if is_transcribing:
+        status_overlay.set_state(
+            "transcribing", "Preparando o texto final...", force_show=True,
+        )
+        return
+    status_overlay.set_state(
+        "idle", "Selecione um texto e clique em Ler.",
+        force_show=True,
+    )
+
+
 def on_open_history(icon, item):
     if not HISTORY_PATH.exists():
         notify("Ainda nao ha historico para exibir.")
@@ -2041,6 +2155,7 @@ def _do_shutdown():
     global is_recording
 
     log("Encerrando SOLetrando")
+    speech_reader.stop()
 
     try:
         if hotkey_manager is not None:
@@ -2190,6 +2305,9 @@ def build_menu():
     ]
 
     language_items = _radio_items(LANGUAGE_OPTIONS, "language", change_language)
+    speech_language_items = _radio_items(
+        SPEECH_LANGUAGE_OPTIONS, "speech_language", change_speech_language
+    )
     insert_items = _radio_items(INSERT_MODE_OPTIONS, "insert_mode", change_insert_mode)
 
     return pystray.Menu(
@@ -2198,11 +2316,13 @@ def build_menu():
         pystray.MenuItem("Iniciar / parar gravacao", lambda icon, item: toggle()),
         pystray.MenuItem("Configuracoes...", on_open_settings),
         pystray.MenuItem("Copiar ultimo ditado", on_copy_last_transcript),
+        pystray.MenuItem("Mostrar controles", on_show_controls),
         pystray.MenuItem("Abrir historico", on_open_history),
         pystray.Menu.SEPARATOR,
         pystray.MenuItem("Tecla de gravar", pystray.Menu(*toggle_items)),
         pystray.MenuItem("Tecla de encerrar", pystray.Menu(*quit_items)),
         pystray.MenuItem("Idioma", pystray.Menu(*language_items)),
+        pystray.MenuItem("Idioma da leitura", pystray.Menu(*speech_language_items)),
         pystray.MenuItem("Insercao de texto", pystray.Menu(*insert_items)),
         pystray.Menu.SEPARATOR,
         pystray.MenuItem(
@@ -2271,6 +2391,7 @@ def main():
     log(f"  Encerrar      = {config['hotkey_quit']}")
     log(f"  Modelo        = {config['model']} ({device}/{compute_type})")
     log(f"  Idioma        = {config['language'] or 'auto'}")
+    log(f"  Leitura       = {config['speech_language']}")
     log(f"  Insercao      = {config['insert_mode']}")
     log(f"  Dados         = {DATA_DIR}")
     log("=" * 55)
@@ -2292,6 +2413,7 @@ def main():
         icon.visible = True
         log("Tray icon ativo")
         status_overlay.start()
+        status_overlay.set_reading_actions(read_selection, stop_reading)
         register_hotkeys()
         start_health_monitor()
         update_tray("idle")
