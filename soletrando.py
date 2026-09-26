@@ -44,7 +44,7 @@ from soletrando_config import (
 )
 from soletrando_audio import build_tone_wav
 from soletrando_ui import StatusOverlay, show_settings_window
-from soletrando_speech import SpeechReader, selected_text
+from soletrando_speech import NO_VOICE_ERROR, SpeechReader, selected_text
 
 IS_WINDOWS = os.name == "nt"
 
@@ -529,6 +529,7 @@ DEBOUNCE_SECONDS = 0.35
 tray_icon = None
 current_hotkey_toggle = None
 current_hotkey_quit = None
+current_hotkey_read = None
 recording_session = 0      # identifica cada gravacao (usado pelo watchdog)
 watchdog_timer = None      # cancelado ao parar (antes vazava 1 thread/gravacao)
 status_overlay = StatusOverlay(
@@ -735,6 +736,7 @@ ERROR_HOTKEY_ALREADY_REGISTERED = 1409
 
 HOTKEY_ID_TOGGLE = 1
 HOTKEY_ID_QUIT = 2
+HOTKEY_ID_READ = 3
 
 _VK_BY_NAME = {
     "scroll lock": 0x91,
@@ -1042,22 +1044,27 @@ def register_hotkeys():
     if hotkey_manager is not None:
         hotkey_manager.set_callback(HOTKEY_ID_TOGGLE, "gravar", toggle)
         hotkey_manager.set_callback(HOTKEY_ID_QUIT, "encerrar", request_shutdown)
-        results = hotkey_manager.apply({
+        hotkey_manager.set_callback(HOTKEY_ID_READ, "ler", toggle_reading)
+        specs = {
             HOTKEY_ID_TOGGLE: config["hotkey_toggle"],
             HOTKEY_ID_QUIT: config["hotkey_quit"],
-        })
+        }
+        if config["hotkey_read"]:
+            specs[HOTKEY_ID_READ] = config["hotkey_read"]
+        results = hotkey_manager.apply(specs)
         if results is not None:
             _hotkey_backend = "win32"
             problems = {msg for msg in results.values() if msg}
             for msg in sorted(problems):
-                log(f"Atalho nao registrado: {msg}.")
                 if msg not in _notified_hotkey_problems:
+                    log(f"Atalho nao registrado: {msg}.")
                     notify(f"Atencao: {msg}.")
                     status_overlay.set_state("error", msg)
             _notified_hotkey_problems = problems
             if not problems:
                 log(f"Hotkeys ativas via RegisterHotKey: "
-                    f"toggle={config['hotkey_toggle']}, quit={config['hotkey_quit']}")
+                    f"toggle={config['hotkey_toggle']}, quit={config['hotkey_quit']}, "
+                    f"ler={config['hotkey_read'] or 'desativado'}")
             return not problems
         log("RegisterHotKey indisponivel; caindo para o hook do 'keyboard'")
 
@@ -1071,27 +1078,29 @@ def _register_hotkeys_fallback():
     nao subir no Windows. No Windows este caminho continua sujeito ao
     LowLevelHooksTimeout descrito no topo da secao, entao ele e ultimo recurso.
     """
-    global current_hotkey_toggle, current_hotkey_quit, _hotkey_backend
+    global current_hotkey_toggle, current_hotkey_quit, current_hotkey_read
+    global _hotkey_backend
 
     _hotkey_backend = "keyboard"
 
     # Remove hotkeys anteriores se existirem
-    try:
-        if current_hotkey_toggle is not None:
-            keyboard.remove_hotkey(current_hotkey_toggle)
-    except Exception:
-        pass
-    try:
-        if current_hotkey_quit is not None:
-            keyboard.remove_hotkey(current_hotkey_quit)
-    except Exception:
-        pass
+    for handle in (current_hotkey_toggle, current_hotkey_quit, current_hotkey_read):
+        try:
+            if handle is not None:
+                keyboard.remove_hotkey(handle)
+        except Exception:
+            pass
     current_hotkey_toggle = None
     current_hotkey_quit = None
+    current_hotkey_read = None
 
     try:
         current_hotkey_toggle = keyboard.add_hotkey(config["hotkey_toggle"], toggle)
         current_hotkey_quit = keyboard.add_hotkey(config["hotkey_quit"], request_shutdown)
+        if config["hotkey_read"]:
+            current_hotkey_read = keyboard.add_hotkey(
+                config["hotkey_read"], toggle_reading
+            )
         log(f"Hotkeys registradas (hook do 'keyboard'): "
             f"toggle={config['hotkey_toggle']}, quit={config['hotkey_quit']}")
         return True
@@ -1101,22 +1110,41 @@ def _register_hotkeys_fallback():
         return False
 
 
+def _apply_hotkey_change(config_key, key):
+    """Troca um atalho e desativa a leitura se ela passar a colidir."""
+    previous_read = config["hotkey_read"]
+    config[config_key] = key
+    config.update(sanitize_config(config))
+    save_config(config)
+    register_hotkeys()
+    rebuild_menu()
+    if previous_read and not config["hotkey_read"] and config_key != "hotkey_read":
+        notify("A tecla de leitura era a mesma e foi desativada. "
+               "Escolha outra em Configuracoes.")
+
+
 def change_hotkey_toggle(label, key):
     """Chamado pelo menu do tray para trocar hotkey."""
     def handler(icon, item):
-        config["hotkey_toggle"] = key
-        save_config(config)
-        register_hotkeys()
+        _apply_hotkey_change("hotkey_toggle", key)
         update_tray("idle")
         log(f"Hotkey alterada para: {label} ({key})")
     return handler
 
 
+def change_hotkey_read(label, key):
+    def handler(icon, item):
+        if key and key in {config["hotkey_toggle"], config["hotkey_quit"]}:
+            notify(f"{label} ja e usada para gravar ou encerrar.")
+            return
+        _apply_hotkey_change("hotkey_read", key)
+        log(f"Hotkey de leitura alterada para: {label} ({key or 'desativado'})")
+    return handler
+
+
 def change_hotkey_quit(label, key):
     def handler(icon, item):
-        config["hotkey_quit"] = key
-        save_config(config)
-        register_hotkeys()
+        _apply_hotkey_change("hotkey_quit", key)
         log(f"Hotkey encerrar alterada para: {label} ({key})")
     return handler
 
@@ -1823,7 +1851,7 @@ def toggle():
                 return
 
             if not is_recording:
-                stop_reading()
+                stop_reading(show_message=False)
                 start_recording()
                 return
 
@@ -1976,16 +2004,46 @@ def on_copy_last_transcript(icon, item):
 _reading_request_lock = threading.Lock()
 _reading_capture_lock = threading.Lock()
 _reading_request = 0
+_reading_capture_active = False
+
+NO_VOICE_MESSAGES = {
+    "pt": "Não há voz em português instalada no Windows. Instale em "
+          "Configurações > Hora e idioma > Fala.",
+    "en": "Não há voz em inglês instalada no Windows. Instale em "
+          "Configurações > Hora e idioma > Fala.",
+    "es": "Não há voz em espanhol instalada no Windows. Instale em "
+          "Configurações > Hora e idioma > Fala.",
+}
 
 
-def stop_reading():
+def stop_reading(show_message=True):
+    """Cancela a captura da selecao e a fala. Devolve True se havia algo."""
     global _reading_request
     with _reading_request_lock:
         _reading_request += 1
-    speech_reader.stop()
-    status_overlay.set_state(
-        "idle", "Leitura interrompida.", hide_after=2.0, force_show=True
-    )
+        was_capturing = _reading_capture_active
+    was_speaking = speech_reader.stop()
+    stopped = was_capturing or was_speaking
+    if stopped and show_message:
+        status_overlay.set_state(
+            "idle", "Leitura interrompida.", hide_after=2.0, force_show=True
+        )
+    return stopped
+
+
+def toggle_reading():
+    """Atalho de leitura: le a selecao ou, se ja estiver lendo, interrompe."""
+    if speech_reader.is_active() or _reading_capture_active:
+        stop_reading()
+        return
+    read_selection("")
+
+
+def _copy_selection_with_keyboard():
+    # Com o atalho de leitura (ex.: Ctrl+Alt+L) ainda pressionado, o Ctrl+C
+    # viraria Ctrl+Alt+C no aplicativo de destino.
+    wait_modifiers_released()
+    keyboard.send("ctrl+c")
 
 
 def read_selection(overlay_selection=""):
@@ -2003,31 +2061,43 @@ def read_selection(overlay_selection=""):
         request_id = _reading_request
 
     def finished(ok, error):
-        if not ok:
-            log(f"Falha na leitura por voz: {error}")
-            status_overlay.set_state(
-                "error", "A voz do Windows não pôde ler o texto.",
-                hide_after=4.0, force_show=True,
-            )
-        else:
+        if ok:
             status_overlay.set_state(
                 "done", "Leitura concluída.", hide_after=2.0,
                 force_show=True,
             )
+            return
+        if error == NO_VOICE_ERROR:
+            language = config["speech_language"]
+            log(f"Leitura por voz: nenhuma voz instalada para '{language}'")
+            message = NO_VOICE_MESSAGES.get(language, NO_VOICE_MESSAGES["pt"])
+        else:
+            log(f"Falha na leitura por voz: {error}")
+            message = "A voz do Windows não pôde ler o texto."
+        status_overlay.set_state("error", message, hide_after=6.0, force_show=True)
 
     def worker():
+        global _reading_capture_active
         with _reading_capture_lock:
             with _reading_request_lock:
                 if request_id != _reading_request:
                     return
+                _reading_capture_active = True
             try:
                 text = overlay_selection.strip() or selected_text(
-                    copy_selection=lambda: keyboard.send("ctrl+c"),
-                    restore_text=copy_to_clipboard_reliable,
+                    copy_selection=_copy_selection_with_keyboard,
+                    # O conteudo original do usuario volta sem gerar uma
+                    # segunda entrada no historico do Windows.
+                    restore_text=lambda original: copy_to_clipboard_reliable(
+                        original, private=True
+                    ),
                 )
             except Exception as e:
                 log(f"Falha ao obter selecao: {e}")
                 text = ""
+            finally:
+                with _reading_request_lock:
+                    _reading_capture_active = False
         with _reading_request_lock:
             if request_id != _reading_request:
                 return
@@ -2037,12 +2107,14 @@ def read_selection(overlay_selection=""):
                 hide_after=4.0, force_show=True,
             )
             return
-        speech_reader._on_done = finished
+        speech_reader.set_on_done(finished)
         status_overlay.set_state(
             "reading", "Lendo o texto selecionado...",
             force_show=True,
         )
-        speech_reader.speak(text, config["speech_language"])
+        speech_reader.speak(
+            text, config["speech_language"], config["speech_rate"]
+        )
 
     threading.Thread(target=worker, name="soletrando-selecao", daemon=True).start()
 
@@ -2059,10 +2131,10 @@ def on_show_controls(icon, item):
             "transcribing", "Preparando o texto final...", force_show=True,
         )
         return
-    status_overlay.set_state(
-        "idle", "Selecione um texto e clique em Ler.",
-        force_show=True,
-    )
+    hint = "Selecione um texto e clique em Ler"
+    if config["hotkey_read"]:
+        hint += f" ou use {config['hotkey_read'].title()}"
+    status_overlay.set_state("idle", hint + ".", force_show=True)
 
 
 def on_open_history(icon, item):
@@ -2151,6 +2223,7 @@ _health_thread = None
 
 def _health_loop():
     checks = 0
+    last_inactive = set()
     while not _shutdown_started.is_set():
         # wait() em vez de sleep(): o encerramento nao espera 30s por isto.
         if _shutdown_started.wait(HEALTH_CHECK_SECONDS):
@@ -2158,14 +2231,20 @@ def _health_loop():
         checks += 1
         try:
             if _hotkey_backend == "win32" and hotkey_manager is not None:
-                inactive = hotkey_manager.inactive_specs()
+                inactive = set(hotkey_manager.inactive_specs())
                 if inactive:
-                    log(f"Atalhos inativos detectados ({', '.join(inactive)}); "
-                        f"tentando registrar de novo")
-                    status_overlay.set_state(
-                        "error", "O atalho parou de responder. Tentando recuperar..."
-                    )
+                    # Um atalho tomado por outro programa continua sendo
+                    # tentado, mas sem repetir a mesma linha a cada 10 s.
+                    if inactive != last_inactive:
+                        log(f"Atalhos inativos detectados ({', '.join(sorted(inactive))}); "
+                            f"tentando registrar de novo")
+                        status_overlay.set_state(
+                            "error", "O atalho parou de responder. Tentando recuperar..."
+                        )
                     register_hotkeys()
+                elif last_inactive:
+                    log("Atalhos recuperados")
+                last_inactive = inactive
             elif (_hotkey_backend == "keyboard"
                   and checks % FALLBACK_RELOAD_EVERY_CHECKS == 0):
                 # O hook antigo pode ser removido silenciosamente pelo Windows.
@@ -2231,6 +2310,16 @@ def build_menu():
         for label, key in QUIT_KEY_OPTIONS
     ]
 
+    read_items = [
+        pystray.MenuItem(
+            label,
+            change_hotkey_read(label, key),
+            checked=_radio_check("hotkey_read", key),
+            radio=True,
+        )
+        for label, key in READ_KEY_OPTIONS
+    ]
+
     language_items = _radio_items(LANGUAGE_OPTIONS, "language", change_language)
     speech_language_items = _radio_items(
         SPEECH_LANGUAGE_OPTIONS, "speech_language", change_speech_language
@@ -2244,9 +2333,11 @@ def build_menu():
         pystray.MenuItem("Configuracoes...", on_open_settings),
         pystray.MenuItem("Copiar ultimo ditado", on_copy_last_transcript),
         pystray.MenuItem("Mostrar controles", on_show_controls),
+        pystray.MenuItem("Parar leitura", lambda icon, item: stop_reading()),
         pystray.MenuItem("Abrir historico", on_open_history),
         pystray.Menu.SEPARATOR,
         pystray.MenuItem("Tecla de gravar", pystray.Menu(*toggle_items)),
+        pystray.MenuItem("Tecla de ler selecao", pystray.Menu(*read_items)),
         pystray.MenuItem("Tecla de encerrar", pystray.Menu(*quit_items)),
         pystray.MenuItem("Idioma", pystray.Menu(*language_items)),
         pystray.MenuItem("Idioma da leitura", pystray.Menu(*speech_language_items)),
@@ -2316,9 +2407,10 @@ def main():
     log("SOLetrando ativo")
     log(f"  Gravar/Parar  = {config['hotkey_toggle']}")
     log(f"  Encerrar      = {config['hotkey_quit']}")
+    log(f"  Ler selecao   = {config['hotkey_read'] or 'desativado'}")
     log(f"  Modelo        = {config['model']} ({device}/{compute_type})")
     log(f"  Idioma        = {config['language'] or 'auto'}")
-    log(f"  Leitura       = {config['speech_language']}")
+    log(f"  Leitura       = {config['speech_language']} (velocidade {config['speech_rate']})")
     log(f"  Insercao      = {config['insert_mode']}")
     log(f"  Dados         = {DATA_DIR}")
     log("=" * 55)

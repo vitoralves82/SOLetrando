@@ -23,11 +23,16 @@ if ([string]::IsNullOrWhiteSpace($text)) { exit 2 }
 [Console]::Write([Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($text)))
 """
 
+# Codigo de saida reservado para "nao ha voz instalada no idioma pedido".
+NO_VOICE_EXIT_CODE = 3
+NO_VOICE_ERROR = "sem_voz_no_idioma"
+
 _SPEAK_SCRIPT = r"""
 Add-Type -AssemblyName System.Speech
 [Console]::InputEncoding = New-Object System.Text.UTF8Encoding($false)
 $request = [Console]::In.ReadToEnd() | ConvertFrom-Json
 $voice = New-Object System.Speech.Synthesis.SpeechSynthesizer
+$missing = $false
 try {
     $available = @($voice.GetInstalledVoices() | Where-Object { $_.Enabled })
     $language = [string]$request.language
@@ -41,10 +46,20 @@ try {
             $_.VoiceInfo.Culture.Name.StartsWith($language + '-')
         } | Select-Object -First 1
     }
-    if ($null -eq $chosen) { throw "Nenhuma voz instalada para $language" }
-    $voice.SelectVoice($chosen.VoiceInfo.Name)
-    $voice.Speak([string]$request.text)
+    if ($null -eq $chosen) {
+        $missing = $true
+    } else {
+        $voice.SelectVoice($chosen.VoiceInfo.Name)
+        $rate = [int]$request.rate
+        if ($rate -lt -10) { $rate = -10 } elseif ($rate -gt 10) { $rate = 10 }
+        $voice.Rate = $rate
+        $voice.Speak([string]$request.text)
+    }
 } finally { $voice.Dispose() }
+if ($missing) {
+    [Console]::Error.Write("Nenhuma voz instalada para $language")
+    exit 3
+}
 """
 
 
@@ -173,19 +188,33 @@ class SpeechReader:
         self._lock = threading.Lock()
         self._process = None
         self._generation = 0
+        self._pending = False
         self._on_done = on_done
 
-    def speak(self, text, language="pt"):
+    def set_on_done(self, callback):
+        """callback(ok, erro); erro e NO_VOICE_ERROR quando falta voz."""
+        self._on_done = callback
+
+    def is_active(self):
+        """True enquanto uma leitura esta sendo preparada ou falada."""
+        with self._lock:
+            if self._pending:
+                return True
+            process = self._process
+        return bool(process and process.poll() is None)
+
+    def speak(self, text, language="pt", rate=0):
         self.stop()
         with self._lock:
             self._generation += 1
             generation = self._generation
+            self._pending = True
         threading.Thread(
-            target=self._run, args=(text, language, generation), daemon=True,
-            name="soletrando-leitura",
+            target=self._run, args=(text, language, rate, generation),
+            daemon=True, name="soletrando-leitura",
         ).start()
 
-    def _run(self, text, language, generation):
+    def _run(self, text, language, rate, generation):
         try:
             process = subprocess.Popen(
                 _powershell(_SPEAK_SCRIPT), stdin=subprocess.PIPE,
@@ -197,12 +226,18 @@ class SpeechReader:
                     process.terminate()
                     return
                 self._process = process
-            request = json.dumps({"text": text, "language": language}, ensure_ascii=False)
+                self._pending = False
+            request = json.dumps(
+                {"text": text, "language": language, "rate": int(rate)},
+                ensure_ascii=False,
+            )
             _output, error = process.communicate(request.encode("utf-8"))
             with self._lock:
                 current = generation == self._generation
             if current and self._on_done:
-                if process.returncode:
+                if process.returncode == NO_VOICE_EXIT_CODE:
+                    self._on_done(False, NO_VOICE_ERROR)
+                elif process.returncode:
                     self._on_done(False, error.decode("utf-8", errors="replace").strip())
                 else:
                     self._on_done(True, "")
@@ -213,11 +248,17 @@ class SpeechReader:
             with self._lock:
                 if generation == self._generation:
                     self._process = None
+                    self._pending = False
 
     def stop(self):
+        """Interrompe a leitura atual. Devolve True se havia algo em andamento."""
         with self._lock:
+            was_active = self._pending
             self._generation += 1
             process = self._process
             self._process = None
+            self._pending = False
         if process and process.poll() is None:
             process.terminate()
+            return True
+        return was_active
