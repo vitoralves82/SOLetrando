@@ -384,7 +384,97 @@ def _set_window_icon(root):
         pass
 
 
-def show_settings_window(config, on_save, model_options=None, actions=None):
+
+
+def choices_with_current(options, current, custom_label="Personalizado"):
+    """Lista (rotulo, valor) que sempre contem o valor atual.
+
+    Um valor valido que nao esta na lista (ex.: idioma "fr" passado pela linha
+    de comando) aparece como opcao extra em vez de ser trocado ao salvar.
+    """
+    options = list(options)
+    if any(value == current for _label, value in options):
+        return options
+    return options + [(f"{custom_label} ({current})", current)]
+
+
+def validate_settings(values):
+    """Devolve (aba, mensagem) com o primeiro problema, ou None."""
+    read_key = values.get("hotkey_read", "")
+    if read_key and read_key == values.get("hotkey_toggle"):
+        return (
+            "reading",
+            "A tecla de leitura não pode ser a mesma tecla de gravar.",
+        )
+    if read_key and read_key == values.get("hotkey_quit"):
+        return (
+            "reading",
+            "A tecla de leitura não pode ser a mesma tecla de encerrar.",
+        )
+    width = values.get("overlay_width")
+    height = values.get("overlay_height")
+    if not isinstance(width, int) or not 120 <= width <= 1000:
+        return ("overlay", "Use largura entre 120 e 1000 pixels.")
+    if not isinstance(height, int) or not 44 <= height <= 600:
+        return ("overlay", "Use altura entre 44 e 600 pixels.")
+    return None
+
+
+PRIVACY_TEXT = (
+    "O QUE FICA GUARDADO NESTE COMPUTADOR\n"
+    "Tudo fica na pasta de dados do SOLetrando (botão abaixo).\n\n"
+    "•  Configuração: preferências, vocabulário e correções. É necessária "
+    "para o aplicativo funcionar.\n"
+    "•  Último ditado: sempre guardado, para o comando Copiar último ditado.\n"
+    "•  Histórico de ditados: somente com a opção acima marcada. Ao passar "
+    "de 2 MB, a versão anterior é mantida como cópia (.1).\n"
+    "•  Registro técnico: eventos, tempos e erros, para diagnóstico. Não "
+    "inclui vocabulário nem correções; o texto ditado só entra se a opção "
+    "acima estiver marcada. Guarda até cerca de 1 MB e uma cópia anterior.\n"
+    "•  Modelos de reconhecimento: baixados uma vez e reutilizados.\n\n"
+    "O QUE PODE SAIR DO COMPUTADOR\n"
+    "•  O SOLetrando não envia áudio nem texto pela internet. A rede é usada "
+    "para baixar o modelo de reconhecimento na primeira vez.\n"
+    "•  O texto ditado passa pela área de transferência para ser colado. "
+    "Com a opção acima, o Windows é instruído a não guardá-lo no histórico "
+    "(Win+V) nem sincronizá-lo; outros programas que monitoram a área de "
+    "transferência ainda podem lê-lo.\n"
+    "•  O programa que recebe o texto segue as próprias regras de "
+    "armazenamento e envio.\n"
+    "•  Arquivos compartilhados manualmente (por exemplo, o registro técnico "
+    "enviado para suporte) levam o que contêm. Revise antes de enviar."
+)
+
+GUIDE_TEXT = (
+    "DITAR\n"
+    "1. Coloque o cursor no campo que receberá o texto.\n"
+    "2. Pressione a tecla de gravar (padrão: Scroll Lock).\n"
+    "3. Fale normalmente e acompanhe a prévia na caixa flutuante.\n"
+    "4. Pressione a mesma tecla para concluir. O texto é inserido no campo.\n\n"
+    "LER UM TEXTO EM VOZ ALTA\n"
+    "Selecione o texto em qualquer programa e pressione a tecla de leitura "
+    "(padrão: Ctrl+Alt+L). Pressione de novo para parar. Também é possível "
+    "selecionar um trecho na caixa flutuante e clicar em Ler.\n\n"
+    "SE A SELEÇÃO NÃO FOR LIDA\n"
+    "Alguns programas não informam a seleção ao Windows. Nesses casos o "
+    "SOLetrando copia a seleção por um instante e restaura a área de "
+    "transferência, mas só quando ela contém texto simples, para não perder "
+    "imagens ou formatação copiadas antes.\n\n"
+    "VOCABULÁRIO E CORREÇÕES\n"
+    "Use o vocabulário para nomes próprios e siglas. Use as correções para "
+    "erros recorrentes, por exemplo: pro clima = PROCLIM.\n\n"
+    "ÍCONE DO SISTEMA\n"
+    "O ícone do SOLetrando pode ficar escondido na seta da bandeja, ao lado "
+    "do relógio. Arraste-o uma vez para a área visível se quiser acesso "
+    "rápido. O microfone que aparece ao gravar pertence ao Windows.\n\n"
+    "EM CASO DE FALHA\n"
+    "Abra o registro técnico nesta aba. Ele mostra se o atalho foi aceito, "
+    "qual modelo foi carregado e quanto tempo cada etapa levou."
+)
+
+
+def show_settings_window(config, on_save, model_options=None, actions=None,
+                         about=None):
     """Abre as configuracoes, a ajuda e as ferramentas do aplicativo."""
     global _settings_open
     with _settings_lock:
@@ -392,22 +482,18 @@ def show_settings_window(config, on_save, model_options=None, actions=None):
             return False
         _settings_open = True
 
+    from soletrando_config import (
+        DEFAULT_CONFIG, HOTKEY_OPTIONS, INSERT_MODE_OPTIONS, LANGUAGE_OPTIONS,
+        QUIT_KEY_OPTIONS, READ_KEY_OPTIONS, SPEECH_LANGUAGE_OPTIONS,
+        SPEECH_RATE_OPTIONS,
+    )
+
     model_options = list(model_options or [])
     actions = dict(actions or {})
-    snapshot = {
-        "model": str(config.get("model", "large-v3-turbo")),
-        "overlay_width": int(config.get("overlay_width", 320)),
-        "overlay_height": int(config.get("overlay_height", 110)),
-        "overlay_recording_seconds": float(
-            config.get("overlay_recording_seconds", 0.0)
-        ),
-        "overlay_done_seconds": float(config.get("overlay_done_seconds", 1.0)),
-        "vocabulary": list(config.get("vocabulary", [])),
-        "corrections": dict(config.get("corrections", {})),
-        "live_preview_enabled": bool(config.get("live_preview_enabled", True)),
-        "save_history": bool(config.get("save_history", True)),
-        "log_transcripts": bool(config.get("log_transcripts", False)),
-    }
+    about = dict(about or {})
+    snapshot = {key: config.get(key, value) for key, value in DEFAULT_CONFIG.items()}
+    snapshot["vocabulary"] = list(snapshot["vocabulary"])
+    snapshot["corrections"] = dict(snapshot["corrections"])
 
     def run():
         global _settings_open
@@ -418,9 +504,8 @@ def show_settings_window(config, on_save, model_options=None, actions=None):
 
             root = tk.Tk()
             root.title("Configurações do SOLetrando")
-            root.geometry("760x650")
-            root.minsize(640, 500)
-            root.configure(bg="#F5F6F8")
+            root.geometry("780x660")
+            root.minsize(660, 520)
             _set_window_icon(root)
 
             background = "#F5F6F8"
@@ -430,6 +515,7 @@ def show_settings_window(config, on_save, model_options=None, actions=None):
             amber = "#F2BC2E"
             amber_dark = "#D59B00"
             border = "#D9DEE7"
+            root.configure(bg=background)
 
             style = ttk.Style(root)
             try:
@@ -438,6 +524,11 @@ def show_settings_window(config, on_save, model_options=None, actions=None):
                 pass
             style.configure("TFrame", background=surface)
             style.configure("TLabel", background=surface, foreground=ink)
+            style.configure("Muted.TLabel", background=surface, foreground=muted)
+            style.configure(
+                "Section.TLabel", background=surface, foreground=ink,
+                font=("Segoe UI Semibold", 11),
+            )
             style.configure(
                 "TCheckbutton", background=surface, foreground=ink
             )
@@ -446,7 +537,7 @@ def show_settings_window(config, on_save, model_options=None, actions=None):
             )
             style.configure("TNotebook", background=background, borderwidth=0)
             style.configure(
-                "TNotebook.Tab", padding=(16, 8), background="#E7EAF0",
+                "TNotebook.Tab", padding=(14, 7), background="#E7EAF0",
                 foreground="#344054",
             )
             style.map(
@@ -462,24 +553,21 @@ def show_settings_window(config, on_save, model_options=None, actions=None):
                 "Accent.TButton", background=[("active", amber_dark)]
             )
 
-            tk.Frame(root, bg=ink, height=6).pack(fill="x")
+            tk.Frame(root, bg=amber, height=5).pack(fill="x")
             shell = tk.Frame(root, bg=background)
             shell.pack(fill="both", expand=True)
             settings_canvas = tk.Canvas(
                 shell, bg=background, highlightthickness=0, borderwidth=0
             )
-            settings_scrollbar = tk.Scrollbar(
+            settings_scrollbar = ttk.Scrollbar(
                 shell, orient="vertical", command=settings_canvas.yview,
-                width=14, relief="flat", borderwidth=0,
-                background=amber, activebackground=amber_dark,
-                troughcolor=border, highlightthickness=0,
             )
             settings_canvas.configure(yscrollcommand=settings_scrollbar.set)
             settings_scrollbar.pack(side="right", fill="y")
             settings_canvas.pack(side="left", fill="both", expand=True)
 
             container = tk.Frame(
-                settings_canvas, bg=background, padx=24, pady=18
+                settings_canvas, bg=background, padx=24, pady=16
             )
             container_window = settings_canvas.create_window(
                 (0, 0), window=container, anchor="nw"
@@ -503,13 +591,13 @@ def show_settings_window(config, on_save, model_options=None, actions=None):
             root.bind("<MouseWheel>", scroll_settings)
 
             brand = tk.Frame(container, bg=background)
-            brand.pack(fill="x", pady=(0, 14))
+            brand.pack(fill="x", pady=(0, 12))
             try:
                 from PIL import Image, ImageTk
 
                 icon_path = _find_asset("icon_idle.png")
                 if icon_path:
-                    icon_image = Image.open(icon_path).convert("RGB")
+                    icon_image = Image.open(icon_path).convert("RGBA")
                     icon_image = icon_image.resize((46, 46), Image.Resampling.LANCZOS)
                     root._soletrando_header_icon = ImageTk.PhotoImage(icon_image)
                     tk.Label(
@@ -524,26 +612,199 @@ def show_settings_window(config, on_save, model_options=None, actions=None):
                 brand_text, text="SOLetrando", font=("Segoe UI Semibold", 19),
                 bg=background, fg=ink, anchor="w",
             ).pack(fill="x")
+            subtitle_parts = ["Ditado e leitura por voz, no seu computador"]
+            if about.get("version"):
+                subtitle_parts.append(f"versão {about['version']}")
             tk.Label(
-                brand_text,
-                text="Personalize o ditado, consulte a ajuda e acesse o diagnóstico.",
+                brand_text, text="  •  ".join(subtitle_parts),
                 font=("Segoe UI", 10), bg=background, fg=muted, anchor="w",
             ).pack(fill="x", pady=(2, 0))
+            if about.get("engine"):
+                chip = tk.Label(
+                    brand, text=about["engine"], font=("Segoe UI", 9),
+                    bg="#E7EAF0", fg="#344054", padx=10, pady=3,
+                )
+                chip.pack(side="right", anchor="n")
 
             notebook = ttk.Notebook(container)
             notebook.pack(fill="both", expand=True)
-            general_tab = ttk.Frame(notebook, padding=18)
-            vocabulary_tab = ttk.Frame(notebook, padding=18)
-            help_tab = ttk.Frame(notebook, padding=18)
-            tools_tab = ttk.Frame(notebook, padding=18)
-            notebook.add(general_tab, text="Geral")
-            notebook.add(vocabulary_tab, text="Vocabulário")
-            notebook.add(help_tab, text="Como usar")
-            notebook.add(tools_tab, text="Diagnóstico")
+            tabs = {}
+            for key, label in (
+                ("dictation", "Ditado"),
+                ("reading", "Leitura"),
+                ("vocabulary", "Vocabulário"),
+                ("overlay", "Caixa flutuante"),
+                ("privacy", "Privacidade"),
+                ("help", "Ajuda"),
+            ):
+                frame = ttk.Frame(notebook, padding=18)
+                notebook.add(frame, text=label)
+                frame.columnconfigure(1, weight=1)
+                tabs[key] = frame
 
+            wrap = 620
+
+            def section(tab, text, row, top=0):
+                ttk.Label(tab, text=text, style="Section.TLabel").grid(
+                    row=row, column=0, columnspan=2, sticky="w", pady=(top, 6)
+                )
+
+            def hint(tab, text, row, top=0, bottom=10):
+                ttk.Label(
+                    tab, text=text, style="Muted.TLabel", wraplength=wrap,
+                    justify="left",
+                ).grid(
+                    row=row, column=0, columnspan=2, sticky="w",
+                    pady=(top, bottom),
+                )
+
+            def separator(tab, row):
+                ttk.Separator(tab).grid(
+                    row=row, column=0, columnspan=2, sticky="ew", pady=(6, 14)
+                )
+
+            def choice(tab, row, text, options, current, width=30,
+                       custom_label="Personalizado"):
+                options = choices_with_current(options, current, custom_label)
+                labels = [label for label, _value in options]
+                by_label = dict(options)
+                current_label = next(
+                    label for label, value in options if value == current
+                )
+                variable = tk.StringVar(value=current_label)
+                ttk.Label(tab, text=text).grid(
+                    row=row, column=0, sticky="w", pady=4, padx=(0, 16)
+                )
+                ttk.Combobox(
+                    tab, textvariable=variable, state="readonly",
+                    values=labels, width=width,
+                ).grid(row=row, column=1, sticky="w", pady=4)
+                return lambda: by_label.get(variable.get(), current)
+
+            # ---------------- Ditado ----------------
+            tab = tabs["dictation"]
+            section(tab, "Reconhecimento", 0)
+            get_model = choice(
+                tab, 1, "Modelo de transcrição",
+                model_options or [(snapshot["model"], snapshot["model"])],
+                snapshot["model"], width=34,
+            )
+            hint(
+                tab,
+                "O turbo costuma ser o equilíbrio entre velocidade e precisão. "
+                "A troca é aplicada ao salvar e pode levar alguns segundos; um "
+                "modelo novo é baixado na primeira vez.",
+                2, top=2,
+            )
+            get_language = choice(
+                tab, 3, "Idioma do ditado", LANGUAGE_OPTIONS,
+                snapshot["language"], custom_label="Outro",
+            )
+            separator(tab, 4)
+            section(tab, "Atalhos e inserção", 5)
+            get_toggle = choice(
+                tab, 6, "Tecla de gravar e concluir", HOTKEY_OPTIONS,
+                snapshot["hotkey_toggle"],
+            )
+            get_quit = choice(
+                tab, 7, "Tecla de encerrar o aplicativo", QUIT_KEY_OPTIONS,
+                snapshot["hotkey_quit"],
+            )
+            get_insert = choice(
+                tab, 8, "Como inserir o texto", INSERT_MODE_OPTIONS,
+                snapshot["insert_mode"],
+            )
+            hint(
+                tab,
+                "Colar é instantâneo. Digitar é mais lento, mas funciona em "
+                "terminais e campos que bloqueiam a colagem.",
+                9, top=2,
+            )
             preview_var = tk.BooleanVar(value=snapshot["live_preview_enabled"])
-            history_var = tk.BooleanVar(value=snapshot["save_history"])
-            log_var = tk.BooleanVar(value=snapshot["log_transcripts"])
+            beep_var = tk.BooleanVar(value=snapshot["beep_enabled"])
+            ttk.Checkbutton(
+                tab, text="Mostrar prévia do texto durante o ditado",
+                variable=preview_var,
+            ).grid(row=10, column=0, columnspan=2, sticky="w", pady=2)
+            ttk.Checkbutton(
+                tab, text="Tocar um bip ao iniciar e ao concluir",
+                variable=beep_var,
+            ).grid(row=11, column=0, columnspan=2, sticky="w", pady=2)
+
+            # ---------------- Leitura ----------------
+            tab = tabs["reading"]
+            section(tab, "Ler o texto selecionado", 0)
+            hint(
+                tab,
+                "Selecione um texto em qualquer programa e pressione a tecla "
+                "de leitura. Pressione de novo para parar. As vozes são as "
+                "instaladas no Windows e funcionam sem internet.",
+                1, top=0,
+            )
+            get_read_key = choice(
+                tab, 2, "Tecla de leitura", READ_KEY_OPTIONS,
+                snapshot["hotkey_read"],
+            )
+            get_speech_language = choice(
+                tab, 3, "Idioma da voz", SPEECH_LANGUAGE_OPTIONS,
+                snapshot["speech_language"],
+            )
+            get_speech_rate = choice(
+                tab, 4, "Velocidade da voz", SPEECH_RATE_OPTIONS,
+                snapshot["speech_rate"],
+            )
+
+            def test_voice():
+                callback = actions.get("test_voice")
+                if callback:
+                    callback(get_speech_language(), get_speech_rate())
+
+            test_button = ttk.Button(tab, text="Ouvir exemplo", command=test_voice)
+            test_button.grid(row=5, column=1, sticky="w", pady=(8, 4))
+            if "test_voice" not in actions:
+                test_button.state(["disabled"])
+            hint(
+                tab,
+                "Sem voz no idioma escolhido? Instale em Configurações do "
+                "Windows > Hora e idioma > Fala > Adicionar vozes.",
+                6, top=10,
+            )
+
+            # ---------------- Vocabulário ----------------
+            tab = tabs["vocabulary"]
+            tab.rowconfigure(2, weight=1)
+            tab.rowconfigure(5, weight=1)
+            section(tab, "Vocabulário preferencial", 0)
+            hint(
+                tab,
+                "Um termo por linha. Exemplo: EnvironPact, PROCLIM, Camarupim.",
+                1, bottom=5,
+            )
+            vocabulary = scrolledtext.ScrolledText(
+                tab, height=7, font=("Segoe UI", 10), wrap="word",
+                relief="solid", borderwidth=1,
+            )
+            vocabulary.grid(row=2, column=0, columnspan=2, sticky="nsew")
+            vocabulary.insert("1.0", "\n".join(snapshot["vocabulary"]))
+            section(tab, "Correções automáticas", 3, top=14)
+            hint(
+                tab, "Uma por linha: texto ouvido = texto correto.", 4, bottom=5
+            )
+            corrections = scrolledtext.ScrolledText(
+                tab, height=7, font=("Segoe UI", 10), wrap="word",
+                relief="solid", borderwidth=1,
+            )
+            corrections.grid(row=5, column=0, columnspan=2, sticky="nsew")
+            corrections.insert(
+                "1.0",
+                "\n".join(
+                    f"{source} = {target}"
+                    for source, target in snapshot["corrections"].items()
+                ),
+            )
+
+            # ---------------- Caixa flutuante ----------------
+            tab = tabs["overlay"]
             width_var = tk.StringVar(value=str(snapshot["overlay_width"]))
             height_var = tk.StringVar(value=str(snapshot["overlay_height"]))
             recording_options = {
@@ -579,91 +840,45 @@ def show_settings_window(config, on_save, model_options=None, actions=None):
                     done_options, snapshot["overlay_done_seconds"], "1 segundo"
                 )
             )
-
-            ttk.Label(
-                general_tab, text="Reconhecimento",
-                font=("Segoe UI Semibold", 11),
-            ).grid(row=0, column=0, columnspan=2, sticky="w")
-            ttk.Label(general_tab, text="Modelo de transcrição").grid(
-                row=1, column=0, sticky="w", pady=(12, 4)
-            )
-            model_by_label = {label: key for label, key in model_options}
-            label_by_model = {key: label for label, key in model_options}
-            current_model_label = label_by_model.get(
-                snapshot["model"], snapshot["model"]
-            )
-            model_var = tk.StringVar(value=current_model_label)
-            model_combo = ttk.Combobox(
-                general_tab, textvariable=model_var, state="readonly",
-                values=list(model_by_label) or [current_model_label], width=38,
-            )
-            model_combo.grid(row=1, column=1, sticky="ew", pady=(12, 4))
-            if snapshot["model"] in label_by_model:
-                model_combo.current(
-                    list(model_by_label).index(label_by_model[snapshot["model"]])
-                )
-            ttk.Label(
-                general_tab,
-                text="A troca é aplicada após salvar e pode levar alguns segundos.",
-                foreground=muted,
-            ).grid(row=2, column=0, columnspan=2, sticky="w", pady=(0, 18))
-
-            ttk.Separator(general_tab).grid(
-                row=3, column=0, columnspan=2, sticky="ew", pady=(0, 16)
-            )
-            ttk.Label(
-                general_tab, text="Caixa de prévia",
-                font=("Segoe UI Semibold", 11),
-            ).grid(row=4, column=0, columnspan=2, sticky="w")
-            ttk.Label(general_tab, text="Largura em pixels").grid(
-                row=5, column=0, sticky="w", pady=(12, 4)
+            section(tab, "Tamanho", 0)
+            ttk.Label(tab, text="Largura em pixels").grid(
+                row=1, column=0, sticky="w", pady=4, padx=(0, 16)
             )
             ttk.Spinbox(
-                general_tab, from_=120, to=1000, increment=20,
+                tab, from_=120, to=1000, increment=20,
                 textvariable=width_var, width=12,
-            ).grid(row=5, column=1, sticky="w", pady=(12, 4))
-            ttk.Label(general_tab, text="Altura em pixels").grid(
-                row=6, column=0, sticky="w", pady=4
+            ).grid(row=1, column=1, sticky="w", pady=4)
+            ttk.Label(tab, text="Altura em pixels").grid(
+                row=2, column=0, sticky="w", pady=4, padx=(0, 16)
             )
             ttk.Spinbox(
-                general_tab, from_=44, to=600, increment=8,
+                tab, from_=44, to=600, increment=8,
                 textvariable=height_var, width=12,
-            ).grid(row=6, column=1, sticky="w", pady=4)
-            ttk.Label(
-                general_tab,
-                text=(
-                    "Faixas permitidas: 120–1000 px de largura e 44–600 px de altura. "
-                    "Abaixo de 220 × 76 px, a caixa mostra apenas o estado."
-                ),
-                foreground=muted,
-            ).grid(row=7, column=0, columnspan=2, sticky="w", pady=(2, 14))
-            ttk.Label(general_tab, text="Ocultar durante a gravação").grid(
-                row=8, column=0, sticky="w", pady=4
+            ).grid(row=2, column=1, sticky="w", pady=4)
+            hint(
+                tab,
+                "Faixas permitidas: 120 a 1000 px de largura e 44 a 600 px de "
+                "altura. Abaixo de 220 × 76 px, a caixa mostra apenas o estado. "
+                "A caixa no canto da tela acompanha as mudanças para você ver o "
+                "resultado antes de salvar.",
+                3, top=4,
+            )
+            separator(tab, 4)
+            section(tab, "Quando ocultar", 5)
+            ttk.Label(tab, text="Durante a gravação").grid(
+                row=6, column=0, sticky="w", pady=4, padx=(0, 16)
             )
             ttk.Combobox(
-                general_tab, textvariable=recording_time_var, state="readonly",
+                tab, textvariable=recording_time_var, state="readonly",
                 values=list(recording_options), width=26,
-            ).grid(row=8, column=1, sticky="w", pady=4)
-            ttk.Label(general_tab, text="Ocultar após concluir").grid(
-                row=9, column=0, sticky="w", pady=4
+            ).grid(row=6, column=1, sticky="w", pady=4)
+            ttk.Label(tab, text="Depois de concluir").grid(
+                row=7, column=0, sticky="w", pady=4, padx=(0, 16)
             )
             ttk.Combobox(
-                general_tab, textvariable=done_time_var, state="readonly",
+                tab, textvariable=done_time_var, state="readonly",
                 values=list(done_options), width=26,
-            ).grid(row=9, column=1, sticky="w", pady=4)
-            ttk.Checkbutton(
-                general_tab, text="Mostrar prévia do texto durante o ditado",
-                variable=preview_var,
-            ).grid(row=10, column=0, columnspan=2, sticky="w", pady=(12, 2))
-            ttk.Checkbutton(
-                general_tab, text="Guardar histórico local dos ditados",
-                variable=history_var,
-            ).grid(row=11, column=0, columnspan=2, sticky="w", pady=2)
-            ttk.Checkbutton(
-                general_tab, text="Incluir o texto integral no registro técnico",
-                variable=log_var,
-            ).grid(row=12, column=0, columnspan=2, sticky="w", pady=2)
-            general_tab.columnconfigure(1, weight=1)
+            ).grid(row=7, column=1, sticky="w", pady=4)
 
             preview_job = None
 
@@ -687,101 +902,109 @@ def show_settings_window(config, on_save, model_options=None, actions=None):
 
             width_var.trace_add("write", refresh_size_preview)
             height_var.trace_add("write", refresh_size_preview)
-            root.after(250, refresh_size_preview)
 
-            ttk.Label(
-                vocabulary_tab, text="Vocabulário preferencial",
-                font=("Segoe UI Semibold", 11),
-            ).pack(fill="x")
-            ttk.Label(
-                vocabulary_tab,
-                text="Um termo por linha. Exemplo: EnvironPact, PROCLIM, Camarupim.",
-                foreground=muted,
-            ).pack(fill="x", pady=(2, 5))
-            vocabulary = scrolledtext.ScrolledText(
-                vocabulary_tab, height=7, font=("Segoe UI", 10), wrap="word",
-                relief="solid", borderwidth=1,
-            )
-            vocabulary.pack(fill="both", expand=True)
-            vocabulary.insert("1.0", "\n".join(snapshot["vocabulary"]))
+            def on_tab_changed(_event=None):
+                # A previa de tamanho so aparece na aba correspondente, para
+                # nao cobrir a tela enquanto o usuario ajusta outras opcoes.
+                if notebook.select() == str(tabs["overlay"]):
+                    refresh_size_preview()
 
-            ttk.Label(
-                vocabulary_tab, text="Correções automáticas",
-                font=("Segoe UI Semibold", 11),
-            ).pack(fill="x", pady=(14, 0))
-            ttk.Label(
-                vocabulary_tab, text="Uma por linha: texto ouvido = texto correto.",
-                foreground=muted,
-            ).pack(fill="x", pady=(2, 5))
-            corrections = scrolledtext.ScrolledText(
-                vocabulary_tab, height=7, font=("Segoe UI", 10), wrap="word",
-                relief="solid", borderwidth=1,
+            notebook.bind("<<NotebookTabChanged>>", on_tab_changed)
+
+            # ---------------- Privacidade ----------------
+            tab = tabs["privacy"]
+            history_var = tk.BooleanVar(value=snapshot["save_history"])
+            log_var = tk.BooleanVar(value=snapshot["log_transcripts"])
+            clipboard_var = tk.BooleanVar(value=snapshot["clipboard_private"])
+            section(tab, "Opções", 0)
+            ttk.Checkbutton(
+                tab, text="Guardar histórico local dos ditados",
+                variable=history_var,
+            ).grid(row=1, column=0, columnspan=2, sticky="w", pady=2)
+            ttk.Checkbutton(
+                tab, text="Incluir o texto ditado no registro técnico "
+                          "(use só para diagnosticar um problema)",
+                variable=log_var,
+            ).grid(row=2, column=0, columnspan=2, sticky="w", pady=2)
+            ttk.Checkbutton(
+                tab, text="Não guardar os ditados no histórico da área de "
+                          "transferência do Windows (Win+V)",
+                variable=clipboard_var,
+            ).grid(row=3, column=0, columnspan=2, sticky="w", pady=2)
+            separator(tab, 4)
+
+            privacy_text = scrolledtext.ScrolledText(
+                tab, font=("Segoe UI", 10), wrap="word", relief="flat",
+                background=surface, foreground=ink, height=11, padx=2,
+                pady=2, borderwidth=0, highlightthickness=0, cursor="arrow",
             )
-            corrections.pack(fill="both", expand=True)
-            corrections.insert(
-                "1.0",
-                "\n".join(
-                    f"{source} = {target}"
-                    for source, target in snapshot["corrections"].items()
-                ),
+            privacy_text.grid(row=5, column=0, columnspan=2, sticky="nsew")
+            privacy_text.insert("1.0", PRIVACY_TEXT)
+            privacy_text.configure(state="disabled")
+            tab.rowconfigure(5, weight=1)
+
+            privacy_buttons = ttk.Frame(tab)
+            privacy_buttons.grid(
+                row=6, column=0, columnspan=2, sticky="ew", pady=(10, 0)
             )
 
-            guide = (
-                "COMEÇAR A DITAR\n"
-                "1. Coloque o cursor no campo que receberá o texto.\n"
-                "2. Pressione a tecla configurada para iniciar.\n"
-                "3. Fale normalmente e acompanhe a prévia.\n"
-                "4. Pressione a mesma tecla para concluir e inserir o texto.\n\n"
-                "PRÉVIA E HISTÓRICO\n"
-                "A barra lateral da caixa permite rever trechos anteriores. O texto "
-                "final também fica disponível em Copiar último ditado. O botão × "
-                "fecha a caixa imediatamente sem cancelar a gravação.\n\n"
-                "VOCABULÁRIO E CORREÇÕES\n"
-                "Use Vocabulário preferencial para nomes próprios e termos técnicos. "
-                "Use Correções automáticas para erros recorrentes, por exemplo: "
-                "pro clima = PROCLIM.\n\n"
-                "ÍCONE DO SISTEMA\n"
-                "O pequeno microfone exibido ao gravar pertence ao sistema operacional. O ícone "
-                "do SOLetrando pode ficar dentro da seta de ícones ocultos; arraste-o "
-                "uma vez para a área visível se quiser mantê-lo ao lado do relógio.\n\n"
-                "PRIVACIDADE E DIAGNÓSTICO\n"
-                "O histórico é local. O registro técnico não contém o texto completo, "
-                "a menos que essa opção seja marcada. Em caso de falha, abra o registro "
-                "técnico na aba Diagnóstico."
-            )
-            guide_text = scrolledtext.ScrolledText(
-                help_tab, font=("Segoe UI", 10), wrap="word", relief="flat",
-                background=surface, foreground=ink, padx=12, pady=10,
-            )
-            guide_text.pack(fill="both", expand=True)
-            guide_text.insert("1.0", guide)
-            guide_text.configure(state="disabled")
-
-            ttk.Label(
-                tools_tab, text="Arquivos e suporte",
-                font=("Segoe UI Semibold", 11),
-            ).pack(anchor="w")
-            ttk.Label(
-                tools_tab,
-                text="Use estas opções para consultar dados locais ou remover o aplicativo.",
-                foreground=muted,
-            ).pack(anchor="w", pady=(2, 16))
-
-            def action_button(label, action_name):
+            def run_file_action(action_name, question):
                 callback = actions.get(action_name)
-                button = ttk.Button(
-                    tools_tab, text=label,
-                    command=callback if callback else lambda: None,
-                )
-                button.pack(fill="x", pady=4)
                 if callback is None:
+                    return
+                if question and not messagebox.askyesno(
+                    "Confirmar", question, parent=root
+                ):
+                    return
+                result = callback()
+                if isinstance(result, str) and result:
+                    messagebox.showinfo("SOLetrando", result, parent=root)
+
+            def small_button(parent, label, action_name, question=None):
+                button = ttk.Button(
+                    parent, text=label,
+                    command=lambda: run_file_action(action_name, question),
+                )
+                button.pack(side="left", padx=(0, 8))
+                if action_name not in actions:
                     button.state(["disabled"])
 
-            action_button("Abrir registro técnico", "open_log")
-            action_button("Abrir histórico de ditados", "open_history")
-            action_button("Abrir pasta do SOLetrando", "open_folder")
-            ttk.Separator(tools_tab).pack(fill="x", pady=16)
-            action_button("Desinstalar SOLetrando...", "uninstall")
+            small_button(privacy_buttons, "Abrir pasta de dados", "open_folder")
+            small_button(privacy_buttons, "Abrir histórico", "open_history")
+            small_button(
+                privacy_buttons, "Apagar histórico...", "clear_history",
+                "Apagar o histórico de ditados e o último ditado salvo? "
+                "Esta ação não pode ser desfeita.",
+            )
+            small_button(
+                privacy_buttons, "Apagar registro técnico...", "clear_log",
+                "Apagar o registro técnico e sua cópia anterior? "
+                "Esta ação não pode ser desfeita.",
+            )
+
+            # ---------------- Ajuda ----------------
+            tab = tabs["help"]
+            tab.rowconfigure(0, weight=1)
+            guide_text = scrolledtext.ScrolledText(
+                tab, font=("Segoe UI", 10), wrap="word", relief="flat",
+                background=surface, foreground=ink, padx=8, pady=6, height=14,
+            )
+            guide_text.grid(row=0, column=0, columnspan=2, sticky="nsew")
+            guide_text.insert("1.0", GUIDE_TEXT)
+            guide_text.configure(state="disabled")
+            support = ttk.Frame(tab)
+            support.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(12, 0))
+            small_button(support, "Abrir registro técnico", "open_log")
+            small_button(support, "Desinstalar...", "uninstall")
+            details = []
+            if about.get("version"):
+                details.append(f"Versão {about['version']}")
+            if about.get("engine"):
+                details.append(about["engine"])
+            if about.get("data_dir"):
+                details.append(f"Dados em {about['data_dir']}")
+            if details:
+                hint(tab, "  •  ".join(details), 2, top=10, bottom=0)
 
             buttons = tk.Frame(container, bg=background)
             buttons.pack(fill="x", pady=(14, 0))
@@ -795,19 +1018,28 @@ def show_settings_window(config, on_save, model_options=None, actions=None):
             def save():
                 try:
                     parsed = parse_corrections(corrections.get("1.0", "end"))
-                    width = int(width_var.get())
-                    height = int(height_var.get())
-                    if not 120 <= width <= 1000 or not 44 <= height <= 600:
-                        raise ValueError(
-                            "Use largura entre 120 e 1000 e altura entre 44 e 600."
-                        )
                 except ValueError as error:
+                    notebook.select(tabs["vocabulary"])
                     messagebox.showerror(
                         "Configuração inválida", str(error), parent=root
                     )
                     return
+                try:
+                    width = int(width_var.get())
+                    height = int(height_var.get())
+                except ValueError:
+                    width = height = None
                 values = {
-                    "model": model_by_label.get(model_var.get(), snapshot["model"]),
+                    "model": get_model(),
+                    "language": get_language(),
+                    "hotkey_toggle": get_toggle(),
+                    "hotkey_quit": get_quit(),
+                    "hotkey_read": get_read_key(),
+                    "insert_mode": get_insert(),
+                    "beep_enabled": beep_var.get(),
+                    "live_preview_enabled": preview_var.get(),
+                    "speech_language": get_speech_language(),
+                    "speech_rate": get_speech_rate(),
                     "overlay_width": width,
                     "overlay_height": height,
                     "overlay_recording_seconds": recording_options[
@@ -820,10 +1052,18 @@ def show_settings_window(config, on_save, model_options=None, actions=None):
                         if line.strip()
                     ],
                     "corrections": parsed,
-                    "live_preview_enabled": preview_var.get(),
                     "save_history": history_var.get(),
                     "log_transcripts": log_var.get(),
+                    "clipboard_private": clipboard_var.get(),
                 }
+                problem = validate_settings(values)
+                if problem:
+                    tab_key, message = problem
+                    notebook.select(tabs[tab_key])
+                    messagebox.showerror(
+                        "Configuração inválida", message, parent=root
+                    )
+                    return
                 on_save(values)
                 callback = actions.get("hide_overlay")
                 if callback:

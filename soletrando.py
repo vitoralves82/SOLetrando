@@ -48,6 +48,28 @@ from soletrando_speech import NO_VOICE_ERROR, SpeechReader, selected_text
 
 IS_WINDOWS = os.name == "nt"
 
+def get_app_version():
+    """Versao do version.txt, no codigo-fonte ou dentro do executavel."""
+    if getattr(sys, "frozen", False):
+        candidates = [Path(sys.executable).parent / "version.txt"]
+    else:
+        candidates = [Path(__file__).parent / "version.txt"]
+    bundle_dir = getattr(sys, "_MEIPASS", None)
+    if bundle_dir:
+        candidates.append(Path(bundle_dir) / "version.txt")
+    for path in candidates:
+        try:
+            value = path.read_text(encoding="utf-8").strip()
+            if value:
+                return value
+        except OSError:
+            continue
+    return ""
+
+
+APP_VERSION = get_app_version()
+
+
 # =====================================================================
 # SPLASH SCREEN (fecha automaticamente ao carregar o modelo)
 # =====================================================================
@@ -62,14 +84,19 @@ def show_splash():
         import tkinter as tk
         from PIL import Image, ImageTk
 
+        background = "#F7F8FA"
         _splash = tk.Tk()
         _splash.overrideredirect(True)
         _splash.attributes("-topmost", True)
-        w, h = 320, 200
+        w, h = 340, 210
         x = (_splash.winfo_screenwidth() - w) // 2
         y = (_splash.winfo_screenheight() - h) // 2
         _splash.geometry(f"{w}x{h}+{x}+{y}")
-        _splash.configure(bg="#1a1a2e")
+        # Mesmo tema claro da caixa flutuante e das configuracoes.
+        _splash.configure(bg="#D9DEE7")
+        body = tk.Frame(_splash, bg=background)
+        body.pack(fill="both", expand=True, padx=1, pady=1)
+        tk.Frame(body, bg="#F2BC2E", height=5).pack(fill="x")
 
         # Icone
         if getattr(sys, "frozen", False):
@@ -80,21 +107,27 @@ def show_splash():
         if icon_path.exists():
             icon_img = Image.open(icon_path).resize((64, 64), Image.LANCZOS)
             icon_photo = ImageTk.PhotoImage(icon_img)
-            icon_label = tk.Label(_splash, image=icon_photo, bg="#1a1a2e")
+            icon_label = tk.Label(body, image=icon_photo, bg=background)
             icon_label.image = icon_photo
-            icon_label.pack(pady=(20, 5))
+            icon_label.pack(pady=(18, 4))
 
         # Nome
         tk.Label(
-            _splash, text="SOLetrando",
-            font=("Segoe UI", 18), fg="white", bg="#1a1a2e",
-        ).pack(pady=(5, 2))
+            body, text="SOLetrando",
+            font=("Segoe UI Semibold", 18), fg="#111827", bg=background,
+        ).pack(pady=(2, 0))
 
         # Status
+        status = "Carregando o modelo de voz..."
         tk.Label(
-            _splash, text="Carregando modelo...",
-            font=("Segoe UI", 12), fg="#aaaaaa", bg="#1a1a2e",
-        ).pack(pady=(2, 10))
+            body, text=status,
+            font=("Segoe UI", 10), fg="#667085", bg=background,
+        ).pack(pady=(4, 0))
+        if APP_VERSION:
+            tk.Label(
+                body, text=f"versão {APP_VERSION}",
+                font=("Segoe UI", 8), fg="#98A2B3", bg=background,
+            ).pack(pady=(2, 10))
 
         _splash.update()
     except Exception:
@@ -1940,16 +1973,23 @@ def change_insert_mode(mode_key):
     log(f"Modo de insercao alterado para '{mode_key}'")
 
 
+SETTINGS_KEYS = {
+    "language", "hotkey_toggle", "hotkey_quit", "hotkey_read", "insert_mode",
+    "beep_enabled", "live_preview_enabled", "speech_language", "speech_rate",
+    "vocabulary", "corrections", "overlay_width", "overlay_height",
+    "overlay_recording_seconds", "overlay_done_seconds", "save_history",
+    "log_transcripts", "clipboard_private",
+}
+HOTKEY_KEYS = ("hotkey_toggle", "hotkey_quit", "hotkey_read")
+
+
 def _save_settings(values):
     """Recebe somente os campos editaveis da janela de configuracoes."""
     previous_model = config["model"]
     requested_model = values.get("model", previous_model)
-    allowed = {
-        "vocabulary", "corrections", "live_preview_enabled",
-        "overlay_width", "overlay_height", "overlay_recording_seconds",
-        "overlay_done_seconds", "save_history", "log_transcripts",
-    }
-    for key in allowed:
+    previous_hotkeys = {key: config[key] for key in HOTKEY_KEYS}
+    previous_language = config["language"]
+    for key in SETTINGS_KEYS:
         if key in values:
             config[key] = values[key]
     # update() sem clear(): outra thread pode ler config[...] neste instante.
@@ -1958,11 +1998,79 @@ def _save_settings(values):
     status_overlay.configure(
         config["overlay_width"], config["overlay_height"]
     )
+    if any(config[key] != previous_hotkeys[key] for key in HOTKEY_KEYS):
+        register_hotkeys()
+    if config["language"] != previous_language:
+        update_tray("idle")
     rebuild_menu()
     status_overlay.set_state("done", "Configurações salvas.", hide_after=1.0)
     log("Configuracoes atualizadas")
     if requested_model != previous_model:
         change_model(requested_model)
+
+
+def _delete_files(paths, use_log_lock=False):
+    """Apaga os arquivos existentes. Devolve (apagados, falhas)."""
+    removed, failed = 0, []
+    for path in paths:
+        try:
+            if use_log_lock:
+                with _log_lock:
+                    existed = path.exists()
+                    path.unlink(missing_ok=True)
+            else:
+                existed = path.exists()
+                path.unlink(missing_ok=True)
+            removed += int(existed)
+        except OSError as e:
+            failed.append(f"{path.name}: {e}")
+    return removed, failed
+
+
+def clear_history_files():
+    removed, failed = _delete_files([
+        HISTORY_PATH, HISTORY_PATH.with_suffix(".txt.1"), LAST_TRANSCRIPT_PATH,
+    ])
+    log(f"Historico apagado pelo usuario ({removed} arquivo(s))")
+    if failed:
+        return "Alguns arquivos não puderam ser apagados:\n" + "\n".join(failed)
+    return "Histórico apagado." if removed else "Não havia histórico salvo."
+
+
+def clear_log_files():
+    removed, failed = _delete_files(
+        [LOG_PATH, LOG_PATH.with_suffix(".log.1")], use_log_lock=True
+    )
+    log("Registro tecnico apagado pelo usuario")
+    if failed:
+        return "Alguns arquivos não puderam ser apagados:\n" + "\n".join(failed)
+    return "Registro técnico apagado."
+
+
+VOICE_SAMPLES = {
+    "pt": "Olá! Esta é a voz que o SOLetrando usará para ler o texto selecionado.",
+    "en": "Hello! This is the voice SOLetrando will use to read your selection.",
+    "es": "¡Hola! Esta es la voz que SOLetrando usará para leer la selección.",
+}
+
+
+def test_voice(language, rate):
+    """Le uma frase curta com o idioma e a velocidade ainda nao salvos."""
+    if is_recording or is_transcribing:
+        return
+
+    def finished(ok, error):
+        if ok:
+            return
+        if error == NO_VOICE_ERROR:
+            message = NO_VOICE_MESSAGES.get(language, NO_VOICE_MESSAGES["pt"])
+        else:
+            log(f"Falha no teste de voz: {error}")
+            message = "A voz do Windows não pôde ler o exemplo."
+        status_overlay.set_state("error", message, hide_after=6.0, force_show=True)
+
+    speech_reader.set_on_done(finished)
+    speech_reader.speak(VOICE_SAMPLES.get(language, VOICE_SAMPLES["pt"]), language, rate)
 
 
 def on_open_settings(icon, item):
@@ -1971,6 +2079,9 @@ def on_open_settings(icon, item):
         "open_history": lambda: on_open_history(None, None),
         "open_folder": lambda: on_open_folder(None, None),
         "uninstall": lambda: on_uninstall(None, None),
+        "clear_history": clear_history_files,
+        "clear_log": clear_log_files,
+        "test_voice": test_voice,
         "preview_overlay": lambda width, height: (
             status_overlay.configure(width, height),
             status_overlay.set_state(
@@ -1987,8 +2098,13 @@ def on_open_settings(icon, item):
         ),
         "hide_overlay": status_overlay.hide,
     }
+    about = {
+        "version": APP_VERSION,
+        "engine": f"{config['model']} em {device.upper()} ({compute_type})",
+        "data_dir": str(DATA_DIR),
+    }
     if not show_settings_window(
-        config, _save_settings, MODEL_OPTIONS, actions
+        config, _save_settings, MODEL_OPTIONS, actions, about
     ):
         notify("A janela de configuracoes ja esta aberta.")
 
@@ -2341,19 +2457,20 @@ def build_menu():
     return pystray.Menu(
         pystray.MenuItem(lambda item: f"SOLetrando ({config['model']} / {device})", None, enabled=False),
         pystray.Menu.SEPARATOR,
-        pystray.MenuItem("Iniciar / parar gravacao", lambda icon, item: toggle()),
-        pystray.MenuItem("Configuracoes...", on_open_settings),
-        pystray.MenuItem("Copiar ultimo ditado", on_copy_last_transcript),
+        pystray.MenuItem("Iniciar / parar gravação", lambda icon, item: toggle()),
+        # default=True: um clique no icone da bandeja abre as configuracoes.
+        pystray.MenuItem("Configurações...", on_open_settings, default=True),
+        pystray.MenuItem("Copiar último ditado", on_copy_last_transcript),
         pystray.MenuItem("Mostrar controles", on_show_controls),
         pystray.MenuItem("Parar leitura", lambda icon, item: stop_reading()),
-        pystray.MenuItem("Abrir historico", on_open_history),
+        pystray.MenuItem("Abrir histórico", on_open_history),
         pystray.Menu.SEPARATOR,
         pystray.MenuItem("Tecla de gravar", pystray.Menu(*toggle_items)),
-        pystray.MenuItem("Tecla de ler selecao", pystray.Menu(*read_items)),
+        pystray.MenuItem("Tecla de ler seleção", pystray.Menu(*read_items)),
         pystray.MenuItem("Tecla de encerrar", pystray.Menu(*quit_items)),
         pystray.MenuItem("Idioma", pystray.Menu(*language_items)),
         pystray.MenuItem("Idioma da leitura", pystray.Menu(*speech_language_items)),
-        pystray.MenuItem("Insercao de texto", pystray.Menu(*insert_items)),
+        pystray.MenuItem("Inserção de texto", pystray.Menu(*insert_items)),
         pystray.Menu.SEPARATOR,
         pystray.MenuItem(
             "Bip sonoro",

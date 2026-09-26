@@ -69,19 +69,19 @@ READ_KEY_OPTIONS = [
 ]
 
 MODEL_OPTIONS = [
-    ("tiny (mais rapido)", "tiny"),
+    ("tiny (mais rápido)", "tiny"),
     ("base", "base"),
     ("small", "small"),
     ("medium", "medium"),
     ("large-v3-turbo (recomendado)", "large-v3-turbo"),
-    ("large-v3 (maxima precisao)", "large-v3"),
+    ("large-v3 (máxima precisão)", "large-v3"),
 ]
 
 LANGUAGE_OPTIONS = [
-    ("Portugues", "pt"),
-    ("Ingles", "en"),
+    ("Português", "pt"),
+    ("Inglês", "en"),
     ("Espanhol", "es"),
-    ("Deteccao automatica", ""),
+    ("Detecção automática", ""),
 ]
 
 SPEECH_LANGUAGE_OPTIONS = [
@@ -106,8 +106,8 @@ QUIT_KEY_OPTIONS = [
 ]
 
 INSERT_MODE_OPTIONS = [
-    ("Colar (rapido)", "paste"),
-    ("Digitar (compativel)", "type"),
+    ("Colar (rápido)", "paste"),
+    ("Digitar (compatível)", "type"),
 ]
 
 VALID_HOTKEY_TOGGLE_KEYS = {key for _, key in HOTKEY_OPTIONS}
