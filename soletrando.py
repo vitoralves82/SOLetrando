@@ -26,8 +26,21 @@ from soletrando_text import (
     apply_corrections,
     build_initial_prompt,
     merge_preview_text,
-    normalize_corrections,
-    normalize_vocabulary,
+)
+from soletrando_config import (
+    DEFAULT_CONFIG,
+    HOTKEY_OPTIONS,
+    INSERT_MODE_OPTIONS,
+    LANGUAGE_OPTIONS,
+    MODEL_OPTIONS,
+    QUIT_KEY_OPTIONS,
+    READ_KEY_OPTIONS,
+    SPEECH_LANGUAGE_OPTIONS,
+    SPEECH_RATE_OPTIONS,
+    VALID_MODEL_KEYS,
+    describe_config_for_log,
+    is_valid_language,
+    sanitize_config,
 )
 from soletrando_audio import build_tone_wav
 from soletrando_ui import StatusOverlay, show_settings_window
@@ -177,150 +190,6 @@ def fatal(msg):
 # =====================================================================
 # CONFIG (hotkeys + modelo)
 # =====================================================================
-DEFAULT_CONFIG = {
-    "hotkey_toggle": "scroll lock",
-    "hotkey_quit": "ctrl+shift+q",
-    # large-v3-turbo: 809M params (praticamente o tamanho do medium) com
-    # precisao de classe "large" e varias vezes mais rapido. Torna o medium
-    # obsoleto em qualidade e velocidade.
-    "model": "large-v3-turbo",
-    "language": "pt",
-    "speech_language": "pt",
-    "beep_enabled": False,
-    # "paste" = Ctrl+V (instantaneo, unicode perfeito)
-    # "type"  = simula digitacao tecla a tecla (compativel com terminais)
-    "insert_mode": "paste",
-    # Termos que ajudam o modelo e substituicoes aplicadas ao resultado final.
-    "vocabulary": [],
-    "corrections": {},
-    # A previa fica somente na janela flutuante. O campo de destino recebe o
-    # texto final uma unica vez, evitando duplicacoes durante o reconhecimento.
-    "live_preview_enabled": True,
-    "overlay_width": 320,
-    "overlay_height": 110,
-    # 0 = fica visivel durante toda a gravacao.
-    "overlay_recording_seconds": 0.0,
-    # -1 = permanece aberta; 0 = fecha imediatamente.
-    "overlay_done_seconds": 1.0,
-    "save_history": True,
-    # Texto integral pode conter informacao sensivel; o registro tecnico guarda
-    # apenas tamanho e desempenho por padrao.
-    "log_transcripts": False,
-}
-
-# Opcoes de hotkey disponiveis no menu
-HOTKEY_OPTIONS = [
-    ("ScrollLock", "scroll lock"),
-    ("F8", "f8"),
-    ("F9", "f9"),
-    ("F10", "f10"),
-    ("Pause", "pause"),
-    ("Ctrl+Shift+F", "ctrl+shift+f"),
-    ("Ctrl+Shift+R", "ctrl+shift+r"),
-    ("Ctrl+Alt+Space", "ctrl+alt+space"),
-]
-
-MODEL_OPTIONS = [
-    ("tiny (mais rapido)", "tiny"),
-    ("base", "base"),
-    ("small", "small"),
-    ("medium", "medium"),
-    ("large-v3-turbo (recomendado)", "large-v3-turbo"),
-    ("large-v3 (maxima precisao)", "large-v3"),
-]
-
-LANGUAGE_OPTIONS = [
-    ("Portugues", "pt"),
-    ("Ingles", "en"),
-    ("Espanhol", "es"),
-    ("Deteccao automatica", ""),
-]
-
-SPEECH_LANGUAGE_OPTIONS = [
-    ("Português (Brasil)", "pt"),
-    ("Inglês", "en"),
-    ("Espanhol", "es"),
-]
-
-QUIT_KEY_OPTIONS = [
-    ("Ctrl+Shift+Q", "ctrl+shift+q"),
-    ("Ctrl+Alt+Q", "ctrl+alt+q"),
-    ("Ctrl+Shift+E", "ctrl+shift+e"),
-]
-
-INSERT_MODE_OPTIONS = [
-    ("Colar (rapido)", "paste"),
-    ("Digitar (compativel)", "type"),
-]
-
-VALID_HOTKEY_TOGGLE_KEYS = {key for _, key in HOTKEY_OPTIONS}
-VALID_HOTKEY_QUIT_KEYS = {key for _, key in QUIT_KEY_OPTIONS}
-VALID_MODEL_KEYS = {key for _, key in MODEL_OPTIONS}
-VALID_INSERT_MODES = {key for _, key in INSERT_MODE_OPTIONS}
-
-
-def is_valid_language(value):
-    """Aceita "" (automatico) ou um codigo tipo pt, en, pt-br."""
-    if value == "":
-        return True
-    return bool(re.fullmatch(r"[a-z]{2,3}(-[a-z]{2,4})?", str(value).lower()))
-
-
-def sanitize_config(cfg):
-    """Normaliza configuracao para evitar valores invalidos/corrompidos."""
-    normalized = dict(DEFAULT_CONFIG)
-    if isinstance(cfg, dict):
-        normalized.update(cfg)
-        # Migra apenas o tamanho padrao da versao anterior. Valores realmente
-        # personalizados pelo usuario permanecem intactos.
-        if (
-            "overlay_done_seconds" not in cfg
-            and cfg.get("overlay_width") == 560
-            and cfg.get("overlay_height") == 180
-        ):
-            normalized["overlay_width"] = DEFAULT_CONFIG["overlay_width"]
-            normalized["overlay_height"] = DEFAULT_CONFIG["overlay_height"]
-
-    if normalized["hotkey_toggle"] not in VALID_HOTKEY_TOGGLE_KEYS:
-        normalized["hotkey_toggle"] = DEFAULT_CONFIG["hotkey_toggle"]
-    if normalized["hotkey_quit"] not in VALID_HOTKEY_QUIT_KEYS:
-        normalized["hotkey_quit"] = DEFAULT_CONFIG["hotkey_quit"]
-    if normalized["model"] not in VALID_MODEL_KEYS:
-        normalized["model"] = DEFAULT_CONFIG["model"]
-    if not is_valid_language(normalized.get("language")):
-        normalized["language"] = DEFAULT_CONFIG["language"]
-    if normalized.get("speech_language") not in {"pt", "en", "es"}:
-        normalized["speech_language"] = DEFAULT_CONFIG["speech_language"]
-    if not isinstance(normalized.get("beep_enabled"), bool):
-        normalized["beep_enabled"] = DEFAULT_CONFIG["beep_enabled"]
-    if normalized.get("insert_mode") not in VALID_INSERT_MODES:
-        normalized["insert_mode"] = DEFAULT_CONFIG["insert_mode"]
-    normalized["vocabulary"] = normalize_vocabulary(normalized.get("vocabulary"))
-    normalized["corrections"] = normalize_corrections(normalized.get("corrections"))
-    for key in ("live_preview_enabled", "save_history", "log_transcripts"):
-        if not isinstance(normalized.get(key), bool):
-            normalized[key] = DEFAULT_CONFIG[key]
-    for key, minimum, maximum in (
-        ("overlay_width", 120, 1000),
-        ("overlay_height", 44, 600),
-    ):
-        try:
-            normalized[key] = max(minimum, min(maximum, int(normalized[key])))
-        except (TypeError, ValueError):
-            normalized[key] = DEFAULT_CONFIG[key]
-    for key, minimum, maximum in (
-        ("overlay_recording_seconds", 0.0, 60.0),
-        ("overlay_done_seconds", -1.0, 60.0),
-    ):
-        try:
-            normalized[key] = max(
-                minimum, min(maximum, float(normalized[key]))
-            )
-        except (TypeError, ValueError):
-            normalized[key] = DEFAULT_CONFIG[key]
-    return normalized
-
-
 def load_config():
     try:
         if CONFIG_PATH.exists():
@@ -342,7 +211,7 @@ def save_config(cfg):
             f.flush()
             os.fsync(f.fileno())
         os.replace(tmp_path, CONFIG_PATH)
-        log(f"Config salva: {cfg}")
+        log(f"Config salva: {describe_config_for_log(cfg)}")
     except Exception as e:
         log(f"Erro ao salvar config: {e}")
 
@@ -1472,8 +1341,12 @@ CF_UNICODETEXT = 13
 GMEM_MOVEABLE_ZEROINIT = 0x0042
 
 
-def copy_to_clipboard(text):
+def copy_to_clipboard(text, private=False):
     """Copia texto para o clipboard do Windows via ctypes (sem dependencias).
+
+    Com private=True, o texto vai acompanhado dos formatos documentados pela
+    Microsoft que o excluem do historico da area de transferencia (Win+V) e da
+    sincronizacao entre dispositivos. A colagem comum nao muda.
 
     Correcoes em relacao a versao anterior:
       - restype dos handles setado para c_void_p. Sem isso o ctypes truncava
@@ -1528,6 +1401,8 @@ def copy_to_clipboard(text):
             log("SetClipboardData falhou")
             return False
         h_mem = None  # propriedade transferida para o sistema
+        if private:
+            _mark_clipboard_private(user32, kernel32)
         log("Texto copiado para clipboard")
         return True
     except Exception as e:
@@ -1545,9 +1420,59 @@ def copy_to_clipboard(text):
             pass
 
 
-def copy_to_clipboard_reliable(text):
-    """Usa a API nativa e recorre ao PowerShell se outro processo interferir."""
-    if copy_to_clipboard(text):
+# Formatos registrados do Windows 10 1809+ para historico e nuvem. Um DWORD 0
+# em cada um pede que o conteudo atual nao seja guardado nem sincronizado.
+_PRIVATE_CLIPBOARD_FORMATS = (
+    "CanIncludeInClipboardHistory",
+    "CanUploadToCloudClipboard",
+)
+_private_clipboard_warned = False
+
+
+def _mark_clipboard_private(user32, kernel32):
+    """Chamado com o clipboard aberto, logo apos o texto ser gravado."""
+    global _private_clipboard_warned
+    user32.RegisterClipboardFormatW.restype = ctypes.c_uint
+    user32.RegisterClipboardFormatW.argtypes = [ctypes.c_wchar_p]
+    for name in _PRIVATE_CLIPBOARD_FORMATS:
+        handle = None
+        try:
+            fmt = user32.RegisterClipboardFormatW(name)
+            handle = kernel32.GlobalAlloc(GMEM_MOVEABLE_ZEROINIT, 4)
+            if not fmt or not handle:
+                raise OSError(f"formato {name} indisponivel")
+            # GMEM_ZEROINIT ja deixa os 4 bytes zerados, que e o valor pedido.
+            if not user32.SetClipboardData(fmt, handle):
+                raise OSError(f"SetClipboardData recusou {name}")
+            handle = None
+        except Exception as e:
+            if not _private_clipboard_warned:
+                _private_clipboard_warned = True
+                log(f"Nao foi possivel excluir o ditado do historico do Windows: {e}")
+        finally:
+            if handle:
+                try:
+                    kernel32.GlobalFree(handle)
+                except Exception:
+                    pass
+
+
+# Script do mecanismo alternativo. A entrada chega em UTF-8: com a codificacao
+# padrao do console (OEM), acentos como "ção" chegavam corrompidos.
+_CLIPBOARD_FALLBACK_SCRIPT = (
+    "[Console]::InputEncoding = New-Object System.Text.UTF8Encoding($false); "
+    "$value = [Console]::In.ReadToEnd(); Set-Clipboard -Value $value"
+)
+
+
+def copy_to_clipboard_reliable(text, private=None):
+    """Usa a API nativa e recorre ao PowerShell se outro processo interferir.
+
+    private=None segue a configuracao clipboard_private.
+    """
+    if private is None:
+        private = config.get("clipboard_private", True)
+    if copy_to_clipboard(text, private=private):
         return True
     if not IS_WINDOWS:
         return False
@@ -1556,17 +1481,20 @@ def copy_to_clipboard_reliable(text):
         result = subprocess.run(
             [
                 "powershell", "-NoProfile", "-NonInteractive", "-Command",
-                "$value = [Console]::In.ReadToEnd(); Set-Clipboard -Value $value",
+                _CLIPBOARD_FALLBACK_SCRIPT,
             ],
-            input=text,
-            text=True,
+            input=text.encode("utf-8"),
             capture_output=True,
             timeout=8,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
         if result.returncode == 0:
-            log("Texto copiado para clipboard pelo mecanismo alternativo")
+            # Set-Clipboard nao oferece os formatos de exclusao do historico.
+            log("Texto copiado para clipboard pelo mecanismo alternativo "
+                "(sem exclusao do historico do Windows)")
             return True
-        log(f"Mecanismo alternativo do clipboard falhou: {result.stderr.strip()}")
+        log("Mecanismo alternativo do clipboard falhou: "
+            f"{result.stderr.decode('utf-8', errors='replace').strip()}")
     except Exception as e:
         log(f"Erro no mecanismo alternativo do clipboard: {e}")
     return False
@@ -1984,9 +1912,8 @@ def _save_settings(values):
     for key in allowed:
         if key in values:
             config[key] = values[key]
-    sanitized = sanitize_config(config)
-    config.clear()
-    config.update(sanitized)
+    # update() sem clear(): outra thread pode ler config[...] neste instante.
+    config.update(sanitize_config(config))
     save_config(config)
     status_overlay.configure(
         config["overlay_width"], config["overlay_height"]
