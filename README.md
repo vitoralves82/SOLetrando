@@ -332,7 +332,7 @@ Press **Scroll Lock**, speak, press again: the text appears wherever the cursor 
 | **Shift+F10** | Speed reading up by one level |
 | **Ctrl+Shift+Q** | Quit SOLetrando |
 
-All three can be changed in **Configurações** (Settings) or in the tray menu. The read-aloud hotkey can also be disabled. Global hotkeys apply to every program; if a combination conflicts with another app, pick a different one.
+The dictation, quit, and read-aloud hotkeys can be changed in **Configurações** (Settings) or in the tray menu. The speed hotkeys can be changed in **Configurações > Leitura**. The read-aloud and speed hotkeys can also be disabled. Global hotkeys apply to every program; if a combination conflicts with another app, pick a different one.
 
 For dictation and reading, keep a suggested hotkey or type your own under **Configurações**. Single **F1** through **F12** keys are accepted, as are two- or three-key combinations including **Ctrl** or **Alt**, such as **Ctrl+K** or **Ctrl+Alt+K**. Existing single-key suggestions remain available. **Salvar** (Save) applies changes while the window stays open; **Fechar** (Close) discards only unsaved edits.
 
