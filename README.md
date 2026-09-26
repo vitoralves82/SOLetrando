@@ -42,6 +42,8 @@ Pressione **Scroll Lock**, fale e pressione de novo: o texto aparece onde estive
 
 Os três podem ser trocados em **Configurações** ou no menu do ícone da bandeja. A tecla de leitura também pode ser desativada. Atalhos globais valem em todos os programas; se uma combinação atrapalhar outro aplicativo, escolha outra.
 
+Para ditado e leitura, você pode manter uma sugestão ou digitar seu próprio atalho em **Configurações**. Aceitam-se **F1 a F12** isoladas ou combinações de duas ou três teclas com **Ctrl** ou **Alt**, como **Ctrl+K** e **Ctrl+Alt+K**. As sugestões antigas de uma tecla continuam disponíveis. **Salvar** aplica as mudanças sem fechar a janela; **Fechar** descarta apenas as alterações ainda não salvas.
+
 ---
 
 ## Requisitos
@@ -99,6 +101,8 @@ Depois da opção B, execute `build.bat`. O executável fica em `dist\soletrando
 3. Pressione a mesma tecla para concluir. O texto final é colado no campo.
 
 Se o texto não chegar ao destino, ele continua na área de transferência (Ctrl+V) e em **Copiar último ditado**.
+
+Em **Como inserir o texto**, **Colar** envia o resultado inteiro com Ctrl+V e costuma ser mais rápido. **Digitar compatível** simula a digitação de cada caractere, podendo funcionar em campos que bloqueiam colagem; leva mais tempo. Se a colagem falhar, o programa tenta digitar automaticamente.
 
 ### Ler um texto em voz alta
 
@@ -325,6 +329,8 @@ Press **Scroll Lock**, speak, press again: the text appears wherever the cursor 
 
 All three can be changed in **Configurações** (Settings) or in the tray menu. The read-aloud hotkey can also be disabled. Global hotkeys apply to every program; if a combination conflicts with another app, pick a different one.
 
+For dictation and reading, keep a suggested hotkey or type your own under **Configurações**. Single **F1** through **F12** keys are accepted, as are two- or three-key combinations including **Ctrl** or **Alt**, such as **Ctrl+K** or **Ctrl+Alt+K**. Existing single-key suggestions remain available. **Salvar** (Save) applies changes while the window stays open; **Fechar** (Close) discards only unsaved edits.
+
 ---
 
 ## Requirements
@@ -382,6 +388,8 @@ After option B, run `build.bat`. The executable is written to `dist\soletrando\s
 3. Press the same hotkey to finish. The final text is pasted into the field.
 
 If the text does not reach the target, it stays on the clipboard (Ctrl+V) and under **Copiar último ditado** (Copy last dictation).
+
+Under **Como inserir o texto** (How to insert text), **Colar** (Paste) sends the whole result with Ctrl+V and is usually faster. **Digitar compatível** (Compatible typing) simulates each character, which may work in fields that block pasting but takes longer. If pasting fails, the app tries typing automatically.
 
 ### Read text aloud
 

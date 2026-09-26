@@ -425,6 +425,25 @@ def voice_choices(voices, language, current=""):
 
 def validate_settings(values):
     """Devolve (aba, mensagem) com o primeiro problema, ou None."""
+    from soletrando_config import (
+        VALID_HOTKEY_READ_KEYS, VALID_HOTKEY_TOGGLE_KEYS,
+        normalize_hotkey_spec,
+    )
+
+    for key, tab, preset_keys, label in (
+        ("hotkey_toggle", "dictation", VALID_HOTKEY_TOGGLE_KEYS, "ditado"),
+        ("hotkey_read", "reading", VALID_HOTKEY_READ_KEYS, "leitura"),
+    ):
+        normalized = normalize_hotkey_spec(values.get(key), preset_keys)
+        if normalized is None:
+            return (
+                tab,
+                f"Atalho de {label} inválido. Use F1 a F12 isolada ou "
+                "Ctrl/Alt com mais uma ou duas teclas, como Ctrl+Alt+K.",
+            )
+        values[key] = normalized
+    if values["hotkey_toggle"] == values.get("hotkey_quit"):
+        return ("dictation", "O atalho de ditado não pode encerrar o aplicativo.")
     read_key = values.get("hotkey_read", "")
     if read_key and read_key == values.get("hotkey_toggle"):
         return (
@@ -692,7 +711,8 @@ def show_settings_window(config, on_save, model_options=None, actions=None,
                 )
 
             def choice(tab, row, text, options, current, width=30,
-                       custom_label="Personalizado", on_change=None):
+                       custom_label="Personalizado", on_change=None,
+                       editable=False):
                 options = choices_with_current(options, current, custom_label)
                 labels = [label for label, _value in options]
                 by_label = dict(options)
@@ -704,12 +724,15 @@ def show_settings_window(config, on_save, model_options=None, actions=None,
                     row=row, column=0, sticky="w", pady=4, padx=(0, 16)
                 )
                 box = ttk.Combobox(
-                    tab, textvariable=variable, state="readonly",
+                    tab, textvariable=variable,
+                    state="normal" if editable else "readonly",
                     values=labels, width=width,
                 )
                 box.grid(row=row, column=1, sticky="w", pady=4)
                 if on_change:
                     box.bind("<<ComboboxSelected>>", lambda _event: on_change())
+                if editable:
+                    return lambda: by_label.get(variable.get(), variable.get().strip())
                 return lambda: by_label.get(variable.get(), current)
 
             # ---------------- Ditado ----------------
@@ -735,21 +758,29 @@ def show_settings_window(config, on_save, model_options=None, actions=None,
             section(tab, "Atalhos e inserção", 5)
             get_toggle = choice(
                 tab, 6, "Tecla de gravar e concluir", HOTKEY_OPTIONS,
-                snapshot["hotkey_toggle"],
+                snapshot["hotkey_toggle"], editable=True,
+            )
+            hint(
+                tab,
+                "Escolha uma sugestão ou digite F1 a F12, Ctrl+K, Alt+F9 "
+                "ou Ctrl+Alt+K. Combinações têm até três teclas e incluem "
+                "Ctrl ou Alt.",
+                7, top=0, bottom=2,
             )
             get_quit = choice(
-                tab, 7, "Tecla de encerrar o aplicativo", QUIT_KEY_OPTIONS,
+                tab, 8, "Tecla de encerrar o aplicativo", QUIT_KEY_OPTIONS,
                 snapshot["hotkey_quit"],
             )
             get_insert = choice(
-                tab, 8, "Como inserir o texto", INSERT_MODE_OPTIONS,
+                tab, 9, "Como inserir o texto", INSERT_MODE_OPTIONS,
                 snapshot["insert_mode"],
             )
             hint(
                 tab,
-                "Colar é instantâneo. Digitar é mais lento, mas funciona em "
-                "terminais e campos que bloqueiam a colagem.",
-                9, top=2,
+                "Colar envia o texto de uma vez (Ctrl+V). Digitar simula "
+                "as teclas, uma a uma; é mais lento, mas pode funcionar em "
+                "campos que não aceitam colagem.",
+                10, top=2,
             )
             preview_var = tk.BooleanVar(
                 master=root, value=snapshot["live_preview_enabled"]
@@ -758,11 +789,11 @@ def show_settings_window(config, on_save, model_options=None, actions=None,
             ttk.Checkbutton(
                 tab, text="Mostrar prévia do texto durante o ditado",
                 variable=preview_var,
-            ).grid(row=10, column=0, columnspan=2, sticky="w", pady=2)
+            ).grid(row=11, column=0, columnspan=2, sticky="w", pady=2)
             ttk.Checkbutton(
                 tab, text="Tocar um bip ao iniciar e ao concluir",
                 variable=beep_var,
-            ).grid(row=11, column=0, columnspan=2, sticky="w", pady=2)
+            ).grid(row=12, column=0, columnspan=2, sticky="w", pady=2)
 
             # ---------------- Leitura ----------------
             tab = tabs["reading"]
@@ -776,7 +807,14 @@ def show_settings_window(config, on_save, model_options=None, actions=None,
             )
             get_read_key = choice(
                 tab, 2, "Tecla de leitura", READ_KEY_OPTIONS,
-                snapshot["hotkey_read"],
+                snapshot["hotkey_read"], editable=True,
+            )
+            hint(
+                tab,
+                "Escolha uma sugestão ou digite F1 a F12, Ctrl+L, "
+                "Alt+F9 ou Ctrl+Alt+L. Combinações têm até três teclas "
+                "e incluem Ctrl ou Alt.",
+                3, top=0, bottom=2,
             )
             # Voz escolhida por idioma. A lista vem do Windows numa thread
             # separada (pode levar alguns segundos) e so e aplicada na thread
@@ -834,16 +872,16 @@ def show_settings_window(config, on_save, model_options=None, actions=None,
                 fill_voices()
 
             get_speech_language = choice(
-                tab, 3, "Idioma da voz", SPEECH_LANGUAGE_OPTIONS,
+                tab, 4, "Idioma da voz", SPEECH_LANGUAGE_OPTIONS,
                 snapshot["speech_language"], on_change=language_changed,
             )
             ttk.Label(tab, text="Voz").grid(
-                row=4, column=0, sticky="w", pady=4, padx=(0, 16)
+                row=5, column=0, sticky="w", pady=4, padx=(0, 16)
             )
             voice_box = ttk.Combobox(
                 tab, textvariable=voice_var, state="readonly", width=48,
             )
-            voice_box.grid(row=4, column=1, sticky="w", pady=4)
+            voice_box.grid(row=5, column=1, sticky="w", pady=4)
             voice_box.bind(
                 "<<ComboboxSelected>>", lambda _event: remember_voice()
             )
@@ -884,7 +922,7 @@ def show_settings_window(config, on_save, model_options=None, actions=None,
             ttk.Label(
                 tab, textvariable=voice_status_var, style="Muted.TLabel",
                 wraplength=wrap - 170, justify="left",
-            ).grid(row=5, column=1, sticky="w", pady=(0, 6))
+            ).grid(row=6, column=1, sticky="w", pady=(0, 6))
 
             def get_speech_voices():
                 remember_voice()
@@ -894,13 +932,13 @@ def show_settings_window(config, on_save, model_options=None, actions=None,
                 return voice_state["options"].get(voice_var.get(), "")
 
             get_speech_rate = choice(
-                tab, 6, "Velocidade da voz", SPEECH_RATE_OPTIONS,
+                tab, 7, "Velocidade da voz", SPEECH_RATE_OPTIONS,
                 snapshot["speech_rate"],
             )
             hint(
                 tab,
                 "Os fatores são aproximados e variam conforme a voz.",
-                7, top=2, bottom=0,
+                8, top=2, bottom=0,
             )
 
             def test_voice():
@@ -909,7 +947,7 @@ def show_settings_window(config, on_save, model_options=None, actions=None,
                     callback(get_speech_language(), get_speech_rate(), get_voice())
 
             voice_buttons = ttk.Frame(tab)
-            voice_buttons.grid(row=8, column=1, sticky="w", pady=(8, 4))
+            voice_buttons.grid(row=9, column=1, sticky="w", pady=(8, 4))
             test_button = ttk.Button(
                 voice_buttons, text="Ouvir exemplo", command=test_voice
             )
@@ -926,7 +964,7 @@ def show_settings_window(config, on_save, model_options=None, actions=None,
                 "Windows > Hora e idioma > Fala > Adicionar vozes e clique em "
                 "Atualizar lista. A lista mostra as vozes SAPI 5, as mesmas "
                 "de Painel de Controle > Fala.",
-                9, top=10,
+                10, top=10,
             )
             fill_voices()
             if "list_voices" in actions:
@@ -1183,6 +1221,10 @@ def show_settings_window(config, on_save, model_options=None, actions=None,
 
             buttons = tk.Frame(container, bg=background)
             buttons.pack(fill="x", pady=(14, 0))
+            save_status_var = tk.StringVar(master=root, value="")
+            ttk.Label(
+                buttons, textvariable=save_status_var, style="Muted.TLabel"
+            ).pack(side="left")
 
             def cancel():
                 callback = actions.get("cancel_overlay_preview")
@@ -1240,13 +1282,21 @@ def show_settings_window(config, on_save, model_options=None, actions=None,
                         "Configuração inválida", message, parent=root
                     )
                     return
-                on_save(values)
+                hotkeys_active = on_save(values)
                 callback = actions.get("hide_overlay")
                 if callback:
                     callback()
-                root.destroy()
+                save_status_var.set("Configurações salvas.")
+                root.after(3500, lambda: save_status_var.set(""))
+                if hotkeys_active is False:
+                    messagebox.showwarning(
+                        "Atalho indisponível",
+                        "As configurações foram salvas, mas uma combinação "
+                        "não pôde ser ativada. Escolha outra tecla.",
+                        parent=root,
+                    )
 
-            ttk.Button(buttons, text="Cancelar", command=cancel).pack(side="right")
+            ttk.Button(buttons, text="Fechar", command=cancel).pack(side="right")
             ttk.Button(
                 buttons, text="Salvar", command=save, style="Accent.TButton"
             ).pack(

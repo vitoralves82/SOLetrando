@@ -117,6 +117,14 @@ INSERT_MODE_OPTIONS = [
 VALID_HOTKEY_TOGGLE_KEYS = {key for _, key in HOTKEY_OPTIONS}
 VALID_HOTKEY_QUIT_KEYS = {key for _, key in QUIT_KEY_OPTIONS}
 VALID_HOTKEY_READ_KEYS = {key for _, key in READ_KEY_OPTIONS}
+HOTKEY_MODIFIERS = {"ctrl", "alt", "shift"}
+HOTKEY_BASE_KEYS = (
+    set("abcdefghijklmnopqrstuvwxyz0123456789")
+    | {f"f{number}" for number in range(1, 25)}
+    | {"space", "esc", "tab", "enter", "backspace", "insert", "delete",
+       "home", "end", "page up", "page down", "print screen", "pause",
+       "scroll lock"}
+)
 VALID_MODEL_KEYS = {key for _, key in MODEL_OPTIONS}
 VALID_INSERT_MODES = {key for _, key in INSERT_MODE_OPTIONS}
 VALID_SPEECH_LANGUAGES = {key for _, key in SPEECH_LANGUAGE_OPTIONS}
@@ -134,6 +142,36 @@ TECHNICAL_LOG_KEYS = (
 
 
 MAX_VOICE_NAME_LENGTH = 200
+
+
+def normalize_hotkey_spec(value, preset_keys):
+    """Aceita F1-F12 isoladas, sugestoes e combinacoes com Ctrl/Alt."""
+    if not isinstance(value, str):
+        return None
+    value = value.strip().lower()
+    if value in preset_keys:
+        return value
+    if value in {f"f{number}" for number in range(1, 13)}:
+        return value
+    parts = [part.strip() for part in value.split("+")]
+    if not 2 <= len(parts) <= 3 or any(not part for part in parts):
+        return None
+    aliases = {"control": "ctrl", "controle": "ctrl", "escape": "esc"}
+    parts = [aliases.get(part, part) for part in parts]
+    modifiers, base = parts[:-1], parts[-1]
+    if (
+        not {"ctrl", "alt"}.intersection(modifiers)
+        or len(set(modifiers)) != len(modifiers)
+        or any(modifier not in HOTKEY_MODIFIERS for modifier in modifiers)
+        or base not in HOTKEY_BASE_KEYS
+    ):
+        return None
+    ordered = [modifier for modifier in ("ctrl", "alt", "shift")
+               if modifier in modifiers]
+    canonical = "+".join(ordered + [base])
+    if canonical in {"ctrl+alt+delete", "ctrl+shift+esc"}:
+        return None
+    return canonical
 
 
 def normalize_speech_voices(value):
@@ -175,12 +213,20 @@ def sanitize_config(cfg):
             normalized["overlay_width"] = DEFAULT_CONFIG["overlay_width"]
             normalized["overlay_height"] = DEFAULT_CONFIG["overlay_height"]
 
-    if normalized["hotkey_toggle"] not in VALID_HOTKEY_TOGGLE_KEYS:
-        normalized["hotkey_toggle"] = DEFAULT_CONFIG["hotkey_toggle"]
+    toggle = normalize_hotkey_spec(
+        normalized["hotkey_toggle"], VALID_HOTKEY_TOGGLE_KEYS
+    )
+    normalized["hotkey_toggle"] = toggle or DEFAULT_CONFIG["hotkey_toggle"]
     if normalized["hotkey_quit"] not in VALID_HOTKEY_QUIT_KEYS:
         normalized["hotkey_quit"] = DEFAULT_CONFIG["hotkey_quit"]
-    if normalized.get("hotkey_read") not in VALID_HOTKEY_READ_KEYS:
-        normalized["hotkey_read"] = DEFAULT_CONFIG["hotkey_read"]
+    read = normalize_hotkey_spec(
+        normalized.get("hotkey_read"), VALID_HOTKEY_READ_KEYS
+    )
+    normalized["hotkey_read"] = (
+        DEFAULT_CONFIG["hotkey_read"] if read is None else read
+    )
+    if normalized["hotkey_toggle"] == normalized["hotkey_quit"]:
+        normalized["hotkey_toggle"] = DEFAULT_CONFIG["hotkey_toggle"]
     # A mesma tecla nao pode gravar e ler ao mesmo tempo. Em conflito, a
     # leitura e desativada em vez de trocar silenciosamente o atalho de gravar.
     if normalized["hotkey_read"] in {

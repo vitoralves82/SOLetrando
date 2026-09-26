@@ -63,6 +63,23 @@ class SettingsHelpersTests(unittest.TestCase):
         )
         self.assertEqual(problem[0], "reading")
 
+    def test_custom_hotkeys_are_validated_before_saving(self):
+        values = self.valid_values(
+            hotkey_toggle=" Alt + Ctrl + K ",
+            hotkey_read="Ctrl + Shift + F12",
+        )
+        self.assertIsNone(validate_settings(values))
+        self.assertEqual(values["hotkey_toggle"], "ctrl+alt+k")
+        self.assertEqual(values["hotkey_read"], "ctrl+shift+f12")
+        self.assertEqual(
+            validate_settings(self.valid_values(hotkey_toggle="shift+k"))[0],
+            "dictation",
+        )
+        function_keys = self.valid_values(hotkey_toggle="F9", hotkey_read="F12")
+        self.assertIsNone(validate_settings(function_keys))
+        self.assertEqual(function_keys["hotkey_toggle"], "f9")
+        self.assertEqual(function_keys["hotkey_read"], "f12")
+
     def test_overlay_size_must_be_within_limits(self):
         self.assertEqual(
             validate_settings(self.valid_values(overlay_width=50))[0], "overlay"
@@ -130,6 +147,7 @@ class SettingsWindowTests(unittest.TestCase):
             original_tk = tk.Tk
             chosen_voice = "Microsoft Francisca (Natural) - Portuguese (Brazil)"
             saved = []
+            windows = []
 
             def descendants(widget):
                 for child in widget.winfo_children():
@@ -151,10 +169,17 @@ class SettingsWindowTests(unittest.TestCase):
                         return
                     rate.set("Rápida (≈1,3×)")
                     voice.set(chosen_voice)
+                    toggle = next(b for b in boxes
+                                  if "ScrollLock" in b.cget("values"))
+                    read = next(b for b in boxes
+                                if "Desativado" in b.cget("values"))
+                    toggle.set("Ctrl+Alt+K")
+                    read.set("Ctrl+Shift+F12")
                     save = next(w for w in descendants(root)
                                 if isinstance(w, ttk.Button)
                                 and w.cget("text") == "Salvar")
                     save.invoke()
+                    windows.append(root.winfo_exists())
 
                 root.after(300, choose_and_save)
                 return root
@@ -175,6 +200,9 @@ class SettingsWindowTests(unittest.TestCase):
             print("RESULT=" + json.dumps({
                 "rate": saved[0]["speech_rate"] if saved else None,
                 "voice": saved[0]["speech_voices"].get("pt") if saved else None,
+                "toggle": saved[0]["hotkey_toggle"] if saved else None,
+                "read": saved[0]["hotkey_read"] if saved else None,
+                "open": windows[0] if windows else None,
             }), flush=True)
             # Tk foi criado em duas threads; encerrar sem destruí-lo em outra.
             os._exit(0 if saved else 2)
@@ -190,6 +218,9 @@ class SettingsWindowTests(unittest.TestCase):
         )
         saved = json.loads(marker.removeprefix("RESULT="))
         self.assertEqual(saved["rate"], 2)
+        self.assertEqual(saved["toggle"], "ctrl+alt+k")
+        self.assertEqual(saved["read"], "ctrl+shift+f12")
+        self.assertEqual(saved["open"], 1)
         self.assertEqual(
             saved["voice"],
             "Microsoft Francisca (Natural) - Portuguese (Brazil)",

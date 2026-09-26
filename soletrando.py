@@ -2001,8 +2001,9 @@ def _save_settings(values):
     status_overlay.configure(
         config["overlay_width"], config["overlay_height"]
     )
+    hotkeys_active = True
     if any(config[key] != previous_hotkeys[key] for key in HOTKEY_KEYS):
-        register_hotkeys()
+        hotkeys_active = register_hotkeys()
     if config["language"] != previous_language:
         update_tray("idle")
     rebuild_menu()
@@ -2010,6 +2011,7 @@ def _save_settings(values):
     log("Configuracoes atualizadas")
     if requested_model != previous_model:
         change_model(requested_model)
+    return hotkeys_active
 
 
 def _delete_files(paths, use_log_lock=False):
@@ -2448,6 +2450,12 @@ def _radio_items(options, config_key, on_change):
 
 
 def build_menu():
+    toggle_options = list(HOTKEY_OPTIONS)
+    if config["hotkey_toggle"] not in {key for _label, key in toggle_options}:
+        toggle_options.append(
+            (f"Personalizado: {config['hotkey_toggle'].title()}",
+             config["hotkey_toggle"])
+        )
     toggle_items = [
         pystray.MenuItem(
             label,
@@ -2455,7 +2463,7 @@ def build_menu():
             checked=_radio_check("hotkey_toggle", key),
             radio=True,
         )
-        for label, key in HOTKEY_OPTIONS
+        for label, key in toggle_options
     ]
 
     quit_items = [
@@ -2468,6 +2476,12 @@ def build_menu():
         for label, key in QUIT_KEY_OPTIONS
     ]
 
+    read_options = list(READ_KEY_OPTIONS)
+    if config["hotkey_read"] not in {key for _label, key in read_options}:
+        read_options.append(
+            (f"Personalizado: {config['hotkey_read'].title()}",
+             config["hotkey_read"])
+        )
     read_items = [
         pystray.MenuItem(
             label,
@@ -2475,7 +2489,7 @@ def build_menu():
             checked=_radio_check("hotkey_read", key),
             radio=True,
         )
-        for label, key in READ_KEY_OPTIONS
+        for label, key in read_options
     ]
 
     language_items = _radio_items(LANGUAGE_OPTIONS, "language", change_language)
