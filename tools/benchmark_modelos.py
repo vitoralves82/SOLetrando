@@ -1,8 +1,10 @@
 """Bancada de comparacao de modelos do SOLetrando.
 
 Mede, com as mesmas amostras de voz, a taxa de erro de palavras (WER), a taxa
-de erro de caracteres (CER), o tempo da transcricao final, o tempo de uma
-atualizacao da previa e o pico de memoria de video.
+de erro de caracteres (CER), o WER formatado (maiusculas e pontuacao contam),
+o acerto de termos tecnicos (siglas e nomes com a grafia exata), o tempo da
+transcricao final, o tempo de uma atualizacao da previa e o pico de memoria
+de video.
 
 Uso tipico no Windows, na pasta do codigo-fonte com o ambiente ativado:
 
@@ -10,7 +12,12 @@ Uso tipico no Windows, na pasta do codigo-fonte com o ambiente ativado:
     python tools\\benchmark_modelos.py medir amostras --modelos large-v3-turbo large-v3
 
 Cada amostra e um arquivo de audio (.wav, .m4a, .mp3, .ogg ou .flac) com um
-.txt de mesmo nome contendo o texto de referencia.
+.txt de mesmo nome contendo o texto de referencia, escrito como voce gostaria
+que aparecesse no documento (pontuacao, maiusculas, siglas e numeros).
+
+Em --modelos cabe um nome do faster-whisper (large-v3, large-v3-turbo...) ou a
+pasta de um modelo convertido para CTranslate2, por exemplo um ajuste fino do
+Whisper para portugues.
 
 Os parametros de transcricao abaixo espelham soletrando.py
 (stop_and_transcribe e _live_preview_loop). Ao muda-los la, atualize aqui.
@@ -18,6 +25,7 @@ Os parametros de transcricao abaixo espelham soletrando.py
 
 import argparse
 import csv
+from collections import Counter
 import json
 import os
 import re
@@ -93,6 +101,47 @@ def error_counts(reference, hypothesis):
     )
 
 
+_FORMAT_TOKEN = re.compile(r"\w+|[^\w\s]")
+
+
+def format_tokens(text):
+    """Palavras e sinais de pontuacao, preservando maiusculas."""
+    return _FORMAT_TOKEN.findall(unicodedata.normalize("NFC", str(text)))
+
+
+def formatted_error_counts(reference, hypothesis):
+    """(erros, tokens_ref) sem normalizar maiusculas nem pontuacao.
+
+    O WER comum apaga pontuacao e maiusculas. Para ditado elas importam: um
+    modelo que acerta as palavras mas entrega tudo em minusculas e sem virgulas
+    obriga a revisar o texto. Esta medida e rigorosa ("9h30" contra "9:30"
+    conta como erro), por isso serve para comparar modelos entre si.
+    """
+    ref_tokens = format_tokens(reference)
+    return edit_distance(ref_tokens, format_tokens(hypothesis)), len(ref_tokens)
+
+
+def term_hits(reference, hypothesis, terms):
+    """(ocorrencias_na_referencia, acertos_com_grafia_exata).
+
+    Cada termo e procurado na referencia sem diferenciar maiusculas; o acerto
+    exige a mesma grafia da referencia na transcricao ("IBAMA", nao "Ibama").
+    """
+    total = hits = 0
+    seen = set()
+    for term in terms:
+        term = str(term).strip()
+        if not term or term.casefold() in seen:
+            continue
+        seen.add(term.casefold())
+        pattern = re.compile(rf"(?<!\w){re.escape(term)}(?!\w)", re.IGNORECASE)
+        for form, count in Counter(pattern.findall(reference)).items():
+            exact = re.findall(rf"(?<!\w){re.escape(form)}(?!\w)", hypothesis)
+            total += count
+            hits += min(count, len(exact))
+    return total, hits
+
+
 def rate(errors, total):
     return errors / total if total else 0.0
 
@@ -108,6 +157,10 @@ def summarize(rows):
         words = sum(item["palavras_ref"] for item in items)
         char_errors = sum(item["erros_caracteres"] for item in items)
         chars = sum(item["caracteres_ref"] for item in items)
+        format_errors = sum(item["erros_formatados"] for item in items)
+        format_tokens_total = sum(item["tokens_formatados_ref"] for item in items)
+        terms_total = sum(item["termos_ref"] for item in items)
+        terms_hit = sum(item["termos_acertos"] for item in items)
         audio = sum(item["duracao_s"] for item in items)
         final = sum(item["tempo_final_s"] for item in items)
         vram = [item["vram_pico_mb"] for item in items if item["vram_pico_mb"] is not None]
@@ -116,6 +169,12 @@ def summarize(rows):
             "amostras": len(items),
             "wer_pct": round(100 * rate(word_errors, words), 2),
             "cer_pct": round(100 * rate(char_errors, chars), 2),
+            "wer_formatado_pct": round(
+                100 * rate(format_errors, format_tokens_total), 2
+            ),
+            "acerto_termos_pct": (
+                round(100 * terms_hit / terms_total, 1) if terms_total else None
+            ),
             "tempo_final_medio_s": round(final / len(items), 3),
             "fator_tempo_real": round(final / audio, 3) if audio else None,
             "previa_media_s": round(
@@ -190,6 +249,12 @@ def find_samples(folder):
     return samples
 
 
+def load_terms(path):
+    """Um termo por linha; linhas vazias e iniciadas por # sao ignoradas."""
+    lines = Path(path).read_text(encoding="utf-8").splitlines()
+    return [line.strip() for line in lines if line.strip() and not line.startswith("#")]
+
+
 def load_user_config():
     base = os.environ.get("LOCALAPPDATA")
     if not base:
@@ -255,12 +320,15 @@ def measure(args):
         return 1
 
     vocabulary, corrections = [], {}
+    terms = load_terms(args.termos) if args.termos else []
     if args.usar_config:
         user_config = load_user_config()
         vocabulary = user_config.get("vocabulary", [])
         corrections = user_config.get("corrections", {})
         print(f"Usando vocabulario ({len(vocabulary)}) e correcoes "
               f"({len(corrections)}) da configuracao local.")
+        # A grafia correta dos termos tambem entra na medida de acerto.
+        terms += list(vocabulary) + list(corrections.values())
     prompt = build_initial_prompt(vocabulary)
 
     audios = [(path, reference, decode_audio(str(path), sampling_rate=SAMPLE_RATE))
@@ -289,6 +357,8 @@ def measure(args):
                 final_seconds = time.perf_counter() - started
             text = apply_corrections(text, corrections) if corrections else text
             word_errors, words, char_errors, chars = error_counts(reference, text)
+            format_errors, format_total = formatted_error_counts(reference, text)
+            terms_total, terms_hit = term_hits(reference, text, terms)
             row = {
                 "modelo": model_name,
                 "amostra": path.name,
@@ -300,14 +370,20 @@ def measure(args):
                 "wer_pct": round(100 * rate(word_errors, words), 2),
                 "erros_caracteres": char_errors,
                 "caracteres_ref": chars,
+                "erros_formatados": format_errors,
+                "tokens_formatados_ref": format_total,
+                "wer_formatado_pct": round(100 * rate(format_errors, format_total), 2),
+                "termos_ref": terms_total,
+                "termos_acertos": terms_hit,
                 "vram_pico_mb": monitor.peak,
                 "carga_modelo_s": round(load_seconds, 2),
                 "referencia": reference,
                 "transcricao": text,
             }
             rows.append(row)
-            print(f"  {path.name}: WER {row['wer_pct']:.1f}% | final "
-                  f"{final_seconds:.2f} s | previa {preview_seconds:.2f} s")
+            print(f"  {path.name}: WER {row['wer_pct']:.1f}% | formatado "
+                  f"{row['wer_formatado_pct']:.1f}% | final {final_seconds:.2f} s | "
+                  f"previa {preview_seconds:.2f} s")
         del model
         print()
 
@@ -317,13 +393,20 @@ def measure(args):
         writer.writeheader()
         writer.writerows(rows)
 
-    print("Resumo (WER e CER ponderados pelo tamanho das amostras):")
+    print("Resumo (taxas ponderadas pelo tamanho das amostras):")
     for item in summarize(rows):
+        terms_text = (
+            f"{item['acerto_termos_pct']:.1f}%"
+            if item["acerto_termos_pct"] is not None else "n/d"
+        )
         print(
-            f"  {item['modelo']:<16} WER {item['wer_pct']:>6.2f}%  "
-            f"CER {item['cer_pct']:>6.2f}%  final {item['tempo_final_medio_s']:.2f} s  "
-            f"previa {item['previa_media_s']:.2f} s  "
-            f"fator {item['fator_tempo_real']}  VRAM pico {item['vram_pico_mb'] or 'n/d'} MB"
+            f"  {item['modelo']}\n"
+            f"    WER {item['wer_pct']:.2f}%  CER {item['cer_pct']:.2f}%  "
+            f"WER formatado {item['wer_formatado_pct']:.2f}%  termos {terms_text}\n"
+            f"    final {item['tempo_final_medio_s']:.2f} s  previa "
+            f"{item['previa_media_s']:.2f} s  fator {item['fator_tempo_real']}  "
+            f"VRAM pico {item['vram_pico_mb'] or 'n/d'} MB  carga "
+            f"{item['carga_modelo_s']} s"
         )
     print(f"\nDetalhes por amostra em: {output.resolve()}")
     print("Atencao: o CSV contem as transcricoes; nao compartilhe se as frases "
@@ -342,13 +425,16 @@ def main(argv=None):
     bench = sub.add_parser("medir", help="compara modelos nas amostras")
     bench.add_argument("pasta", help="pasta com audios e .txt de referencia")
     bench.add_argument("--modelos", nargs="+",
-                       default=["large-v3-turbo", "large-v3"])
+                       default=["large-v3-turbo", "large-v3"],
+                       help="nomes do faster-whisper ou pastas de modelos CTranslate2")
     bench.add_argument("--device", default="cuda", choices=["cuda", "cpu"])
     bench.add_argument("--compute-type", default=None,
                        help="padrao: float16 na GPU e int8 na CPU")
     bench.add_argument("--idioma", default="pt")
     bench.add_argument("--usar-config", action="store_true",
                        help="aplica vocabulario e correcoes do SOLetrando instalado")
+    bench.add_argument("--termos",
+                       help="arquivo com siglas e nomes a conferir, um por linha")
     bench.add_argument("--saida", default="resultado_benchmark.csv")
 
     args = parser.parse_args(argv)
