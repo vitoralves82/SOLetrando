@@ -9,3 +9,7 @@ build/
 dist/
 assets/icon.ico
 installer_output/
+
+# Bancada de modelos: gravacoes de voz e resultados sao pessoais
+amostras/
+resultado_benchmark*.csv

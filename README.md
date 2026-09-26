@@ -4,9 +4,9 @@
   <img src="icon_idle.png" alt="SOLetrando" width="128">
 </p>
 
-Ditado por voz gratuito, local e offline para Windows — utilizando [faster-whisper](https://github.com/SYSTRAN/faster-whisper) + CUDA/CPU.
+Ditado e leitura por voz para *Windows*, gratuitos e executados no próprio computador, com [faster-whisper](https://github.com/SYSTRAN/faster-whisper) em GPU NVIDIA ou CPU.
 
-Pressione **ScrollLock**, fale, pressione novamente. O texto aparece onde estiver o cursor: Word, Notepad, navegador, qualquer app.
+Pressione **Scroll Lock**, fale e pressione de novo: o texto aparece onde estiver o cursor (Word, navegador, bloco de notas, qualquer programa). Selecione um texto e pressione **Ctrl+Alt+L** para ouvi-lo em voz alta.
 
 ![Python](https://img.shields.io/badge/Python-3.10%2B-blue)
 ![CUDA](https://img.shields.io/badge/CUDA-opcional-green)
@@ -18,18 +18,17 @@ Pressione **ScrollLock**, fale, pressione novamente. O texto aparece onde estive
 
 ## Funcionalidades
 
-- **100% local** — sem nuvem, sem assinatura, sem limites
-- **Ícone na bandeja do sistema** com indicadores de cor (amarelo=ocioso, azul=gravando, âmbar=transcrevendo)
-- **Indicador flutuante rolável** com botão discreto para fechar
-- **Prévia integral durante o ditado** com tamanho e duração configuráveis
-- **Vocabulário e correções pessoais** para nomes, siglas e termos recorrentes
-- **Último ditado e histórico local** para recuperar ou copiar um texto depois
-- **Atalhos configuráveis** via menu de clique direito no ícone da bandeja
-- **Bip sonoro** ao iniciar/parar gravação
-- **Inicialização automática** com o Windows via script VBS ou atalho
-- **Executável .exe** independente (não precisa de Python para rodar)
-- **Multi-idioma** — Português, Inglês, Espanhol, Francês e mais de 90 idiomas
-- **GPU opcional** — usa GPU NVIDIA (CUDA) para velocidade, ou faz fallback para CPU automaticamente
+- **Processamento local:** o áudio e o texto são processados no computador. A internet é usada para baixar o modelo de reconhecimento na primeira vez.
+- **Ditado com prévia:** uma caixa flutuante mostra o texto enquanto você fala; o resultado final é inserido de uma vez no campo de destino.
+- **Leitura em voz alta** do texto selecionado em qualquer programa, com as vozes instaladas no *Windows*, velocidade ajustável e atalho próprio.
+- **Vocabulário e correções pessoais** para nomes, siglas e termos recorrentes.
+- **Último ditado e histórico local** para recuperar um texto depois.
+- **Privacidade configurável:** o registro técnico não guarda vocabulário nem correções, e o ditado pode ficar fora do histórico da área de transferência do *Windows* (Win+V).
+- **Todas as preferências numa janela** (clique no ícone da bandeja), além do menu de clique direito.
+- **Ícone na bandeja** com cores de estado: amarelo = pronto, azul = gravando, âmbar = transcrevendo.
+- **GPU opcional:** usa GPU NVIDIA quando disponível e passa para a CPU automaticamente.
+- **Vários idiomas:** português por padrão; inglês, espanhol, detecção automática e outros idiomas do Whisper pela linha de comando.
+- **Bancada de medição** para comparar modelos com a sua própria voz.
 
 ---
 
@@ -37,299 +36,212 @@ Pressione **ScrollLock**, fale, pressione novamente. O texto aparece onde estive
 
 | Atalho | Ação |
 |---|---|
-| **ScrollLock** | Iniciar / Parar gravação e inserir texto |
-| **Ctrl+Shift+Q** | Encerrar |
+| **Scroll Lock** | Iniciar ou concluir o ditado e inserir o texto |
+| **Ctrl+Alt+L** | Ler em voz alta o texto selecionado; pressionar de novo interrompe |
+| **Ctrl+Shift+Q** | Encerrar o SOLetrando |
 
-Os atalhos podem ser alterados pelo menu de clique direito no ícone da bandeja. As alterações são salvas automaticamente.
+Os três podem ser trocados em **Configurações** ou no menu do ícone da bandeja. A tecla de leitura também pode ser desativada. Atalhos globais valem em todos os programas; se uma combinação atrapalhar outro aplicativo, escolha outra.
 
 ---
 
 ## Requisitos
 
-- **Windows 10/11**
-- **Python 3.10+** (não necessário se usar o .exe)
-- **GPU NVIDIA com CUDA** (opcional — testado na RTX 3060; usa CPU automaticamente se não disponível)
-- **Drivers NVIDIA** com suporte a CUDA 11.x ou 12.x (apenas se usar GPU)
-- **Microfone**
+- *Windows* 10 ou 11
+- Microfone
+- Python 3.10 ou superior (somente para rodar a partir do código-fonte)
+- GPU NVIDIA (opcional). As versões atuais do faster-whisper usam CUDA 12 e cuDNN 9; sem essas bibliotecas, o SOLetrando usa a CPU. Veja a seção sobre GPU no [README do faster-whisper](https://github.com/SYSTRAN/faster-whisper#gpu).
+- Vozes do *Windows* no idioma da leitura (normalmente já existe voz em português no *Windows* em português)
 
 ---
 
 ## Instalação
 
-### Opção A: Baixar o executável (recomendado)
+### Opção A: executável pronto
 
-1. Vá em [GitHub Releases](https://github.com/vitoralves82/SOLetrando/releases) e baixe o `.zip` da última versão
-2. Extraia o conteúdo do `.zip`
-3. Execute `install.bat` para criar atalhos no Desktop e Startup automaticamente
-4. Ou execute `soletrando.exe` diretamente
+1. Em [Releases](https://github.com/vitoralves82/SOLetrando/releases), baixe o `.zip` da versão mais recente.
+2. Extraia o conteúdo.
+3. Execute `install.bat` para criar atalhos na Área de Trabalho e na inicialização, ou abra `soletrando.exe` diretamente.
 
-Sem necessidade de Python, Git ou terminal.
+Não precisa de Python, Git nem terminal.
 
-### Opção B: Rodar a partir do código-fonte
+### Opção B: a partir do código-fonte
 
 ```powershell
 git clone https://github.com/vitoralves82/SOLetrando.git
 cd SOLetrando
 python -m venv .venv
 .\.venv\Scripts\activate
-```
-
-Instale o PyTorch com CUDA ([pytorch.org](https://pytorch.org/get-started/locally/)):
-
-```powershell
-pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu121
-```
-
-Instale as dependências:
-
-```powershell
 pip install -r requirements.txt
-```
-
-Execute:
-
-```powershell
-python soletrando.py
-```
-
-Modo silencioso (sem janela de console — recomendado):
-
-```powershell
 .\.venv\Scripts\pythonw.exe soletrando.py
 ```
 
-Para criar atalhos no Desktop e Startup automaticamente:
+O `pythonw.exe` roda sem janela de console. Para ver as mensagens no terminal, use `python soletrando.py`. Para criar atalhos na Área de Trabalho e na inicialização: `python install.py`.
 
-```powershell
-python install.py
-```
+O SOLetrando **não usa PyTorch**; não é preciso instalá-lo.
 
-### Opção C: Gerar executável .exe a partir do código-fonte
+### Opção C: gerar o executável
 
-Após instalar a partir do código-fonte (Opção B), execute:
+Depois da opção B, execute `build.bat`. O executável fica em `dist\soletrando\soletrando.exe`. Com o [Inno Setup](https://jrsoftware.org/isinfo.php) no PATH, o mesmo script gera o instalador em `installer_output\`.
 
-```powershell
-build.bat
-```
+### Atualização
 
-O executável estará em `dist\soletrando\soletrando.exe`. Clique duas vezes para rodar — sem necessidade de Python ou console.
+- **Código-fonte:** `git pull` e `pip install -r requirements.txt`.
+- **Executável:** baixe a nova versão em Releases. O `update.py` só oferece versões **posteriores** à instalada e se recusa a rodar numa pasta clonada do Git.
 
 ---
 
-## Opções
+## Uso
 
-```
---model     Modelo Whisper: tiny, base, small, medium, large-v3-turbo (padrão), large-v3
---language  Idioma: pt (padrão), en, es, fr, de... ou "auto" para detecção automática
-```
+### Ditar
 
-```powershell
-python soletrando.py --model large-v3
-python soletrando.py --model small --language en
-python soletrando.py --language auto
-```
+1. Coloque o cursor no campo que receberá o texto.
+2. Pressione a tecla de gravar e fale normalmente. A prévia aparece na caixa flutuante.
+3. Pressione a mesma tecla para concluir. O texto final é colado no campo.
 
-Você também pode alterar o modelo em **Configurações**. O idioma e o modo de
-inserção permanecem no menu da bandeja. As mudanças são aplicadas sem reiniciar
-o aplicativo.
+Se o texto não chegar ao destino, ele continua na área de transferência (Ctrl+V) e em **Copiar último ditado**.
 
-### Modelos — velocidade vs. precisão
+### Ler um texto em voz alta
 
-| Modelo | Parâmetros | VRAM (GPU) / RAM (CPU) | Velocidade | Precisão |
-|---|---|---|---|---|
-| `tiny` | 39 M | ~1 GB | Muito rápido | Baixa |
-| `base` | 74 M | ~1 GB | Rápido | Razoável |
-| `small` | 244 M | ~2 GB | Médio | Boa |
-| `medium` | 769 M | ~5 GB | Médio | Muito boa |
-| **`large-v3-turbo`** | **809 M** | **~6 GB** | **Rápido** | **Excelente** |
-| `large-v3` | 1550 M | ~10 GB | Mais lento | Excelente |
+1. Selecione o texto em qualquer programa.
+2. Pressione **Ctrl+Alt+L** (ou a tecla escolhida). Pressione de novo para parar.
 
-**Por que `large-v3-turbo` é o padrão:** ele tem praticamente o mesmo tamanho do
-`medium` (809 M contra 769 M de parâmetros), mas entrega precisão de classe
-"large" — a diferença média de WER para o `large-v3` completo é de cerca de
-0,4 ponto percentual — e roda ~4× mais rápido que o `large-v3`. Na prática, o
-`medium` deixou de fazer sentido: o turbo é melhor **e** mais rápido no mesmo
-orçamento de memória. Português está entre os idiomas mais bem suportados
-(WER abaixo de 10%).
+Também é possível selecionar um trecho na caixa flutuante e clicar em **Ler**. Em **Configurações > Leitura** você escolhe idioma, velocidade e ouve um exemplo. Se faltar voz no idioma, o aviso indica onde instalá-la no *Windows* (Configurações > Hora e idioma > Fala).
 
-A única coisa que o turbo perde é a tarefa de *tradução* para inglês, que foi
-retirada do fine-tuning. Como o SOLetrando só faz transcrição, isso não afeta o
-app. Se você configurou `medium` alguma vez, sua escolha é preservada — troque
-para `large-v3-turbo` pelo menu da bandeja para pegar o ganho.
+Alguns programas não informam a seleção aos recursos de acessibilidade do *Windows*. Nesses casos, o SOLetrando copia a seleção por um instante e restaura a área de transferência, mas **só quando ela contém texto simples**, para não perder imagens ou formatação copiadas antes. Se a leitura falhar, copie algo como texto simples (por exemplo, no bloco de notas) e tente de novo.
 
----
+### Configurações
 
-## Inicialização automática com o Windows
+Um clique no ícone da bandeja abre a janela com as abas:
 
-### A partir do código-fonte
-
-Copie o `soletrando_startup.vbs` para a pasta de inicialização:
-
-```powershell
-copy soletrando_startup.vbs "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup\"
-```
-
-Edite os caminhos dentro do arquivo `.vbs` se necessário.
-
-### A partir do .exe
-
-Crie um atalho para `dist\soletrando\soletrando.exe` e coloque em:
-
-```
-%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\
-```
-
----
-
-## Configuração
-
-As configurações são salvas em `%LOCALAPPDATA%\Soletrando\soletrando_config.json`
-(a mesma pasta guarda o log e o cache dos modelos):
-
-```json
-{
-  "hotkey_toggle": "scroll lock",
-  "hotkey_quit": "ctrl+shift+q",
-  "model": "large-v3-turbo",
-  "language": "pt",
-  "speech_language": "pt",
-  "beep_enabled": false,
-  "insert_mode": "paste",
-  "vocabulary": ["EnvironPact", "PROCLIM"],
-  "corrections": {"pro clima": "PROCLIM"},
-  "live_preview_enabled": true,
-  "overlay_width": 320,
-  "overlay_height": 110,
-  "overlay_recording_seconds": 0.0,
-  "overlay_done_seconds": 1.0,
-  "save_history": true,
-  "log_transcripts": false
-}
-```
-
-- `insert_mode: "paste"` — cola o texto com Ctrl+V. É instantâneo e lida com
-  acentos e emojis perfeitamente. **Padrão.**
-- `insert_mode: "type"` — simula a digitação tecla a tecla. Mais lento, mas
-  necessário em janelas que não aceitam Ctrl+V (alguns terminais usam
-  Ctrl+Shift+V).
-
-Você pode editar este arquivo diretamente ou usar o menu do ícone na bandeja.
-
----
-
-## Menu do Ícone na Bandeja
-
-Clique com o botão direito no ícone "S" na bandeja do sistema:
-
-- **Tecla de gravar** — escolher atalho de gravação (ScrollLock, F8, F9, F10, Pause, Ctrl+Shift+F, etc.)
-- **Tecla de encerrar** — escolher atalho para sair
-- **Idioma** — Português, Inglês, Espanhol ou detecção automática
-- **Idioma da leitura** — português por padrão, independente da transcrição
-- **Inserção de texto** — colar (rápido) ou digitar (compatível)
-- **Bip sonoro** — sinal sonoro ao iniciar/parar a gravação
-- **Configurações** — modelo, tamanho da prévia, vocabulário, ajuda e diagnóstico
-- **Copiar último ditado** — recuperar o último resultado na área de transferência
-- **Mostrar controles** — abrir a caixa com o botão **Ler**
-- **Abrir histórico** — consultar os ditados salvos localmente
-- **Abrir pasta** — abrir a pasta de dados (`%LOCALAPPDATA%\Soletrando`)
-- **Encerrar** — fechar o SOLetrando
-
-Dentro de **Configurações**, a aba **Diagnóstico** reúne o registro técnico, o
-histórico, a pasta de dados e a desinstalação. A aba **Como usar** contém um guia
-rápido. A caixa de prévia possui barra de rolagem sempre visível e pode ser
-arrastada pelo título. As dimensões são demonstradas ao vivo durante o ajuste.
-O intervalo permitido é de 120 × 44 a 1000 × 600 pixels. Abaixo de 220 × 76
-pixels, ela se torna um indicador compacto e mostra somente o estado. Também é
-possível definir quando a caixa desaparece e fechá-la imediatamente pelo botão ×.
-
-### Leitura do texto selecionado
-
-1. Em qualquer aplicativo, destaque o texto que deseja ouvir.
-2. Se a caixa flutuante estiver oculta, use **Mostrar controles** no ícone da bandeja e volte a selecionar o texto.
-3. Clique em **Ler**. Use **Parar** para interromper a leitura.
-
-Também é possível selecionar um trecho da prévia do próprio SOLetrando. A leitura
-usa vozes locais do *Windows* e prefere **pt-BR** por padrão. O **Idioma da leitura**
-é independente da transcrição. Para outros idiomas escolhidos, procura uma voz
-instalada no idioma correspondente. Se não houver voz, exibe um aviso.
-
-Alguns aplicativos não oferecem a seleção ao recurso de acessibilidade do *Windows*.
-Nesse caso, o SOLetrando tenta copiar a seleção temporariamente e restaurar o
-texto que já estava na área de transferência. Se ela contiver somente imagem ou
-arquivo, ou formatos enriquecidos, a cópia alternativa não é feita. Para ter o botão visível, a caixa
-precisa ter pelo menos 220 × 76 pixels.
-
----
-
-## Estrutura do Projeto
-
-```
-soletrando/
-├── soletrando.py              # Script principal
-├── soletrando_speech.py       # Leitura local e captura da seleção
-├── soletrando_ui.py           # Interface flutuante e configurações
-├── install.bat                # Instalador (wrapper)
-├── install.py                 # Instalador (cria atalhos Desktop/Startup)
-├── soletrando_startup.vbs     # Inicialização automática no Windows (VBS)
-├── build.bat                  # Script de build (PyInstaller)
-├── version.txt                # Versão do aplicativo
-├── requirements.txt
-├── .gitignore
-├── LICENSE
-└── README.md
-```
-
----
-
-## Solução de Problemas
-
-| Problema | Solução |
+| Aba | Conteúdo |
 |---|---|
-| `No module named 'faster_whisper'` | `pip install faster-whisper` |
-| CUDA não detectado | O programa usa CPU automaticamente. Para GPU, verifique os drivers NVIDIA e a versão CUDA do PyTorch |
-| Microfone não detectado | `python -c "import sounddevice; print(sounddevice.query_devices())"` |
-| Texto não aparece no app | Certifique-se de que o cursor está no app de destino antes de pressionar o atalho |
-| "Instance already running" | Delete `%TEMP%\soletrando.lock` ou encerre o `pythonw.exe` |
-| Ícone não visível na bandeja | Clique na seta `^` na barra de tarefas para ver ícones ocultos |
-| O atalho para de responder depois de alguns minutos | Corrigido na versão atual (veja abaixo). Se ainda ocorrer, abra o log pelo menu da bandeja e procure por `Atalhos inativos` |
-| "O atalho X já está reservado por outro programa" | Outro aplicativo registrou a mesma tecla antes do SOLetrando. Escolha outro atalho em **Tecla de gravar** no menu da bandeja |
-| O atalho não funciona dentro de um programa específico | Programas executados **como administrador** ignoram atalhos de programas comuns (proteção UIPI do Windows). Rode o SOLetrando como administrador também |
+| **Ditado** | Modelo, idioma, teclas de gravar e encerrar, modo de inserção, prévia e bip |
+| **Leitura** | Tecla de leitura, idioma e velocidade da voz, botão Ouvir exemplo |
+| **Vocabulário** | Termos preferenciais e correções automáticas (`ouvido = correto`) |
+| **Caixa flutuante** | Tamanho (com prévia ao vivo) e quando ocultar |
+| **Privacidade** | Histórico, registro técnico, área de transferência, o que fica salvo e botões para apagar |
+| **Ajuda** | Guia rápido, versão, registro técnico e desinstalação |
 
-### Por que o atalho parava de funcionar
+O menu de clique direito continua oferecendo acesso rápido a teclas, idiomas, inserção, bip, último ditado, histórico e **Parar leitura**.
 
-Até a versão anterior os atalhos usavam um *hook* global de teclado
-(`WH_KEYBOARD_LL`, via biblioteca `keyboard`). Nesse modelo, **toda** tecla
-digitada em **qualquer** programa passa por código Python dentro do hook.
+---
 
-O Windows dá a esse hook um orçamento de tempo — o valor de
-`HKCU\Control Panel\Desktop\LowLevelHooksTimeout`, 300 ms por padrão — e, do
-Windows 7 em diante, **remove o hook silenciosamente** quando esse limite
-estoura. Bastava uma transcrição pesada (ou o antivírus inspecionando o
-processo) travar o interpretador por mais de 300 ms para o atalho morrer: o
-programa continuava aberto, o ícone continuava na bandeja, o menu continuava
-abrindo — mas a tecla nunca mais respondia até reiniciar o aplicativo.
+## Privacidade: o que fica salvo
 
-Agora os atalhos usam `RegisterHotKey`, a API do Windows feita para atalhos
-globais. Ela não instala hook nenhum: o Windows entrega o evento direto na
-fila de mensagens do SOLetrando. Não há orçamento de tempo para estourar, não
-há hook para ser removido, e o custo por tecla digitada no resto do sistema
-passa a ser zero. Um monitor interno ainda confere os atalhos a cada 30
-segundos e os registra de novo se algum deixar de valer.
+Tudo fica em `%LOCALAPPDATA%\Soletrando`:
 
-Efeito colateral esperado: o `ScrollLock` agora é consumido pelo SOLetrando,
-então o LED do teclado deixa de acender ao usá-lo como atalho. O estado da
-gravação continua sendo indicado pela cor do ícone na bandeja.
+| Arquivo | Conteúdo | Quando |
+|---|---|---|
+| `soletrando_config.json` | Preferências, vocabulário e correções | Sempre; necessário para o aplicativo |
+| `ultimo_ditado.txt` | Texto do último ditado | Sempre; usado por Copiar último ditado |
+| `historico_ditados.txt` (e `.txt.1`) | Ditados com data e hora | Só com **Guardar histórico** marcado; gira ao passar de 2 MB |
+| `soletrando.log` (e `.log.1`) | Eventos técnicos, tempos e erros | Sempre; até cerca de 1 MB mais uma cópia anterior |
+| `models\` | Modelos de reconhecimento | Após o primeiro download |
+
+O registro técnico **não** contém vocabulário nem correções (somente a quantidade). O texto ditado só entra nele com a opção **Incluir o texto ditado no registro técnico**, pensada para diagnóstico. As abas Privacidade e Ajuda têm botões para abrir a pasta e apagar histórico ou registro técnico.
+
+O que pode sair do computador:
+
+- O SOLetrando não envia áudio nem texto pela internet. Com o modelo já baixado, o carregamento não consulta a rede.
+- O texto passa pela área de transferência para ser colado. Com **Não guardar os ditados no histórico da área de transferência** (ligado por padrão), o *Windows* é instruído a não guardá-lo no histórico (Win+V) nem sincronizá-lo entre dispositivos. Outros programas que monitoram a área de transferência ainda podem lê-lo.
+- O programa que recebe o texto segue as próprias regras.
+- Arquivos compartilhados manualmente (por exemplo, o registro técnico para suporte) levam o que contêm. Revise antes de enviar.
+
+Desinstalar pelo *Windows* uma instalação feita com o instalador remove a pasta de dados, inclusive os modelos.
+
+---
+
+## Modelos
+
+| Modelo | Parâmetros | Observação |
+|---|---|---|
+| `tiny`, `base`, `small` | 39 M a 244 M | Leves; úteis em CPU fraca, com mais erros |
+| `medium` | 769 M | Intermediário |
+| **`large-v3-turbo`** | 809 M | **Padrão.** Decodificador reduzido: bem mais rápido que o `large-v3` |
+| `large-v3` | 1550 M | Mais pesado; pode errar menos em alguns vocabulários |
+
+Segundo a OpenAI, o `turbo` é bem mais rápido, com pequena perda média de precisão, maior em alguns idiomas. Isso **não garante** o mesmo resultado para a sua voz, seu microfone e seus termos técnicos. Para decidir com dados, use a bancada abaixo. Memória de vídeo e tempos variam com a GPU e o tipo de cálculo (`float16`, `int8_float16`), por isso não são fixados aqui.
+
+Na linha de comando:
+
+```
+--model     tiny, base, small, medium, large-v3-turbo (padrão), large-v3
+--language  pt (padrão), en, es, fr, de... ou "auto" para detecção automática
+```
+
+### Bancada: comparar modelos com a sua voz
+
+A pasta `tools` traz uma bancada que mede, com as mesmas gravações, a taxa de erro de palavras (WER, *word error rate*: palavras trocadas, faltando ou sobrando, divididas pelo total da referência), o tempo após parar, o tempo de uma atualização da prévia e o pico de memória de vídeo.
+
+```powershell
+# 1. Gravar amostras lendo frases (troque as frases por outras do seu dia a dia)
+python tools\benchmark_modelos.py gravar tools\frases_exemplo_pt.txt amostras
+
+# 2. Comparar os modelos na GPU, com o vocabulário e as correções já configurados
+python tools\benchmark_modelos.py medir amostras --modelos large-v3-turbo large-v3 --usar-config
+```
+
+O resumo sai no terminal e os detalhes em `resultado_benchmark.csv`. Gravações e resultados ficam fora do Git por padrão (`.gitignore`). Os parâmetros de transcrição espelham os do aplicativo.
+
+---
+
+## Inicialização automática
+
+- **Executável:** marque a opção durante a instalação ou use `install.bat`.
+- **Código-fonte:** `python install.py`, ou copie `soletrando_startup.vbs` para `%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\` e ajuste os caminhos dentro dele.
+
+---
+
+## Estrutura do projeto
+
+```
+SOLetrando/
+├── soletrando.py          # Núcleo: captura, modelo, atalhos, inserção e bandeja
+├── soletrando_config.py   # Opções, valores padrão e validação da configuração
+├── soletrando_speech.py   # Leitura por voz e captura da seleção
+├── soletrando_text.py     # Vocabulário, correções e união da prévia
+├── soletrando_audio.py    # Bip sonoro
+├── soletrando_ui.py       # Caixa flutuante e janela de Configurações
+├── update.py              # Atualizador por Releases
+├── install.py / .bat      # Atalhos na Área de Trabalho e na inicialização
+├── soletrando.spec        # Geração do executável (PyInstaller)
+├── installer.iss          # Instalador (Inno Setup)
+├── build.bat              # Executável e instalador
+├── tools/                 # Bancada de modelos e frases de exemplo
+├── tests/                 # Testes automatizados (python -m unittest discover -s tests)
+└── version.txt
+```
+
+---
+
+## Solução de problemas
+
+| Problema | O que fazer |
+|---|---|
+| O texto não aparece no programa | Confira se o cursor estava no campo antes de gravar. O texto também fica na área de transferência e em **Copiar último ditado**. Em terminais, use o modo **Digitar** |
+| A GPU não é usada | O registro técnico mostra `Modelo carregado: ... / cpu`. Confira drivers e bibliotecas CUDA 12 e cuDNN 9 (veja Requisitos) |
+| Microfone não detectado | `python -c "import sounddevice; print(sounddevice.query_devices())"` e o microfone padrão do *Windows* |
+| "Já existe uma instância" | Encerre `soletrando.exe` ou `pythonw.exe` no Gerenciador de Tarefas |
+| Ícone não aparece na bandeja | Clique na seta `^` da barra de tarefas e arraste o ícone para a área visível |
+| "O atalho X já está reservado por outro programa" | Outro aplicativo registrou a mesma tecla antes. Escolha outra em Configurações |
+| Atalho não funciona num programa específico | Programas executados **como administrador** ignoram atalhos de programas comuns (proteção UIPI do *Windows*). Rode o SOLetrando como administrador também |
+| A leitura diz que não há voz | Instale a voz em Configurações do *Windows* > Hora e idioma > Fala |
+| A leitura não pega a seleção | Veja "Ler um texto em voz alta" acima |
+
+### Por que o atalho antigo parava de funcionar
+
+Versões antigas usavam um *hook* global de teclado (`WH_KEYBOARD_LL`, biblioteca `keyboard`): toda tecla digitada em qualquer programa passava por código Python. O *Windows* dá a esse *hook* um limite de tempo (`LowLevelHooksTimeout`, 300 ms por padrão) e o remove silenciosamente quando o limite estoura. Uma transcrição pesada ou o antivírus bastavam para o atalho morrer sem aviso.
+
+Hoje os atalhos usam `RegisterHotKey`, a API do *Windows* feita para atalhos globais, sem *hook* e sem limite de tempo. Um monitor interno confere os atalhos a cada 10 segundos e os registra de novo se algum deixar de valer. Efeito colateral: o `Scroll Lock` usado como atalho não acende mais o LED do teclado; o estado aparece na cor do ícone.
 
 ---
 
 ## Créditos
 
-- [faster-whisper](https://github.com/SYSTRAN/faster-whisper) — Motor de transcrição
-- [OpenAI Whisper](https://github.com/openai/whisper) — Modelos de linguagem
-- [pystray](https://github.com/moses-palmer/pystray) — Ícone na bandeja do sistema
-- [sounddevice](https://python-sounddevice.readthedocs.io/) — Captura de áudio
-
----
+- [faster-whisper](https://github.com/SYSTRAN/faster-whisper): motor de transcrição
+- [OpenAI Whisper](https://github.com/openai/whisper): modelos de reconhecimento de fala
+- [pystray](https://github.com/moses-palmer/pystray): ícone na bandeja
+- [sounddevice](https://python-sounddevice.readthedocs.io/): captura de áudio
 
 ## Licença
 
@@ -344,288 +256,238 @@ MIT
   <img src="icon_idle.png" alt="SOLetrando" width="128">
 </p>
 
-Free, local, offline voice dictation for Windows — powered by [faster-whisper](https://github.com/SYSTRAN/faster-whisper) + CUDA/CPU.
+Free voice dictation and read-aloud for Windows that run on your own computer, powered by [faster-whisper](https://github.com/SYSTRAN/faster-whisper) on an NVIDIA GPU or the CPU.
 
-Press **ScrollLock**, speak, press again. Text appears wherever your cursor is: Word, Notepad, browser, any app.
+Press **Scroll Lock**, speak, press again: the text appears wherever the cursor is (Word, browser, Notepad, any app). Select some text and press **Ctrl+Alt+L** to hear it read aloud.
 
 ---
 
 ## Features
 
-- **100% local** — no cloud, no subscription, no limits
-- **System tray icon** with color indicators (gray=idle, green=recording, yellow=transcribing)
-- **Scrollable floating status indicator** with a discreet close button
-- **Full live dictation preview** with configurable size and visibility duration
-- **Personal vocabulary and corrections** for names, acronyms, and recurring terms
-- **Last dictation and local history** to recover or copy text later
-- **Configurable hotkeys** via right-click menu on the tray icon
-- **Audio beep** feedback when recording starts/stops
-- **Auto-start** with Windows via VBS script or shortcut
-- **Standalone .exe** build option (no Python needed to run)
-- **Multi-language** — Portuguese, English, Spanish, French, and 90+ languages
-- **GPU optional** — runs on NVIDIA GPU (CUDA) for speed, or falls back to CPU automatically
+- **Local processing:** audio and text are processed on your computer. The internet is used to download the speech model the first time.
+- **Dictation with live preview:** a floating panel shows the text while you speak; the final result is inserted once into the target field.
+- **Read aloud** the text selected in any program, using the voices installed in Windows, with adjustable speed and its own hotkey.
+- **Personal vocabulary and corrections** for names, acronyms, and recurring terms.
+- **Last dictation and local history** to recover text later.
+- **Configurable privacy:** the technical log never stores vocabulary or corrections, and dictations can be kept out of the Windows clipboard history (Win+V).
+- **All preferences in one window** (click the tray icon), plus the right-click menu.
+- **Tray icon** with state colors: yellow = ready, blue = recording, amber = transcribing.
+- **Optional GPU:** uses an NVIDIA GPU when available and falls back to the CPU automatically.
+- **Multiple languages:** Portuguese by default; English, Spanish, auto-detect, and other Whisper languages from the command line.
+- **Benchmark tool** to compare models with your own voice.
 
 ---
 
 ## Hotkeys (default)
 
-| Shortcut | Action |
+| Hotkey | Action |
 |---|---|
-| **ScrollLock** | Start / Stop recording and insert text |
-| **Ctrl+Shift+Q** | Quit |
+| **Scroll Lock** | Start or finish dictation and insert the text |
+| **Ctrl+Alt+L** | Read the selected text aloud; press again to stop |
+| **Ctrl+Shift+Q** | Quit SOLetrando |
 
-Hotkeys can be changed via the tray icon right-click menu. Changes are saved automatically.
+All three can be changed in **Configurações** (Settings) or in the tray menu. The read-aloud hotkey can also be disabled. Global hotkeys apply to every program; if a combination conflicts with another app, pick a different one.
 
 ---
 
 ## Requirements
 
-- **Windows 10/11**
-- **Python 3.10+** (not needed if using the .exe build)
-- **NVIDIA GPU with CUDA** (optional — tested on RTX 3060; falls back to CPU if unavailable)
-- **NVIDIA drivers** with CUDA 11.x or 12.x support (only if using GPU)
-- **Microphone**
+- Windows 10 or 11
+- Microphone
+- Python 3.10 or later (only to run from source)
+- NVIDIA GPU (optional). Current faster-whisper versions use CUDA 12 and cuDNN 9; without those libraries SOLetrando runs on the CPU. See the GPU section of the [faster-whisper README](https://github.com/SYSTRAN/faster-whisper#gpu).
+- Windows voices for the read-aloud language (Portuguese Windows usually ships a Portuguese voice)
 
 ---
 
 ## Installation
 
-### Option A: Download the executable (recommended)
+### Option A: prebuilt executable
 
-1. Go to [GitHub Releases](https://github.com/vitoralves82/SOLetrando/releases) and download the `.zip` from the latest version
-2. Extract the `.zip` contents
-3. Run `install.bat` to create Desktop and Startup shortcuts automatically
-4. Or run `soletrando.exe` directly
+1. Download the latest `.zip` from [Releases](https://github.com/vitoralves82/SOLetrando/releases).
+2. Extract it.
+3. Run `install.bat` to create Desktop and Startup shortcuts, or open `soletrando.exe` directly.
 
 No Python, Git, or terminal needed.
 
-### Option B: Run from source
+### Option B: from source
 
 ```powershell
 git clone https://github.com/vitoralves82/SOLetrando.git
 cd SOLetrando
 python -m venv .venv
 .\.venv\Scripts\activate
-```
-
-Install PyTorch with CUDA ([pytorch.org](https://pytorch.org/get-started/locally/)):
-
-```powershell
-pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu121
-```
-
-Install dependencies:
-
-```powershell
 pip install -r requirements.txt
-```
-
-Run:
-
-```powershell
-python soletrando.py
-```
-
-Headless mode (no console window — recommended):
-
-```powershell
 .\.venv\Scripts\pythonw.exe soletrando.py
 ```
 
-To create Desktop and Startup shortcuts automatically:
+`pythonw.exe` runs without a console window. To see messages in the terminal, use `python soletrando.py`. To create Desktop and Startup shortcuts: `python install.py`.
 
-```powershell
-python install.py
-```
+SOLetrando **does not use PyTorch**; there is no need to install it.
 
-### Option C: Build standalone .exe from source
+### Option C: build the executable
 
-After installing from source (Option B), run:
+After option B, run `build.bat`. The executable is written to `dist\soletrando\soletrando.exe`. With [Inno Setup](https://jrsoftware.org/isinfo.php) on the PATH, the same script also builds the installer in `installer_output\`.
 
-```powershell
-build.bat
-```
+### Updating
 
-The executable will be in `dist\soletrando\soletrando.exe`. Double-click to run — no Python or console needed.
+- **Source:** `git pull` and `pip install -r requirements.txt`.
+- **Executable:** download the new version from Releases. `update.py` only offers versions **newer** than the installed one and refuses to run inside a Git clone.
 
 ---
 
-## Options
+## Usage
+
+### Dictate
+
+1. Place the cursor in the field that will receive the text.
+2. Press the record hotkey and speak normally. The preview appears in the floating panel.
+3. Press the same hotkey to finish. The final text is pasted into the field.
+
+If the text does not reach the target, it stays on the clipboard (Ctrl+V) and under **Copiar último ditado** (Copy last dictation).
+
+### Read text aloud
+
+1. Select the text in any program.
+2. Press **Ctrl+Alt+L** (or your chosen hotkey). Press again to stop.
+
+You can also select part of the floating panel's text and click **Ler** (Read). Under **Configurações > Leitura** you choose the voice language and speed and can play a sample. If no voice is installed for that language, the warning explains where to add one in Windows (Settings > Time & language > Speech).
+
+Some programs do not expose their selection to Windows accessibility. In that case SOLetrando briefly copies the selection and restores the clipboard, **but only when the clipboard holds plain text**, so images or rich formatting copied earlier are never lost. If reading fails, copy some plain text (for example, in Notepad) and try again.
+
+### Settings window
+
+A single click on the tray icon opens a window with these tabs:
+
+| Tab | Contents |
+|---|---|
+| **Ditado** (Dictation) | Model, language, record and quit hotkeys, insertion mode, preview, and beep |
+| **Leitura** (Reading) | Read-aloud hotkey, voice language and speed, sample button |
+| **Vocabulário** (Vocabulary) | Preferred terms and automatic corrections (`heard = correct`) |
+| **Caixa flutuante** (Floating panel) | Size (with live preview) and when to hide |
+| **Privacidade** (Privacy) | History, technical log, clipboard option, what is stored, and delete buttons |
+| **Ajuda** (Help) | Quick guide, version, technical log, and uninstall |
+
+The right-click menu still offers quick access to hotkeys, languages, insertion mode, beep, last dictation, history, and **Parar leitura** (Stop reading).
+
+---
+
+## Privacy: what is stored
+
+Everything lives in `%LOCALAPPDATA%\Soletrando`:
+
+| File | Contents | When |
+|---|---|---|
+| `soletrando_config.json` | Preferences, vocabulary, and corrections | Always; required by the app |
+| `ultimo_ditado.txt` | Text of the last dictation | Always; used by Copy last dictation |
+| `historico_ditados.txt` (and `.txt.1`) | Dictations with date and time | Only with **Guardar histórico** (keep history) enabled; rotates after 2 MB |
+| `soletrando.log` (and `.log.1`) | Technical events, timings, and errors | Always; up to about 1 MB plus one previous copy |
+| `models\` | Speech recognition models | After the first download |
+
+The technical log does **not** contain vocabulary or corrections (only their count). Dictated text is added to it only when the diagnostic option to include it is enabled. The Privacy and Help tabs have buttons to open the folder and delete the history or the technical log.
+
+What can leave the computer:
+
+- SOLetrando does not send audio or text over the internet. Once the model is downloaded, loading it does not contact the network.
+- Text goes through the clipboard to be pasted. With the clipboard-history option (on by default), Windows is asked not to keep it in the clipboard history (Win+V) or sync it across devices. Other programs that monitor the clipboard can still read it.
+- The program receiving the text follows its own rules.
+- Files you share manually (for example, the technical log for support) carry whatever they contain. Review them before sending.
+
+Uninstalling through Windows (when installed with the installer) removes the data folder, including the models.
+
+---
+
+## Models
+
+| Model | Parameters | Notes |
+|---|---|---|
+| `tiny`, `base`, `small` | 39 M to 244 M | Light; useful on slow CPUs, with more errors |
+| `medium` | 769 M | Middle ground |
+| **`large-v3-turbo`** | 809 M | **Default.** Reduced decoder: much faster than `large-v3` |
+| `large-v3` | 1550 M | Heavier; may make fewer errors on some vocabularies |
+
+According to OpenAI, `turbo` is much faster with a small average accuracy loss, larger in some languages. That **does not guarantee** the same result for your voice, microphone, and technical terms. To decide with data, use the benchmark below. Video memory and timings depend on the GPU and compute type (`float16`, `int8_float16`), so they are not fixed here.
+
+Command line:
 
 ```
---model     Whisper model: tiny, base, small, medium, large-v3-turbo (default), large-v3
---language  Language: pt (default), en, es, fr, de... or empty for auto-detect
+--model     tiny, base, small, medium, large-v3-turbo (default), large-v3
+--language  pt (default), en, es, fr, de... or "auto" for auto-detect
 ```
+
+### Benchmark: compare models with your voice
+
+The `tools` folder includes a benchmark that uses the same recordings to measure word error rate (WER: substituted, missing, or extra words divided by the reference length), time after stopping, time for one preview update, and peak video memory.
 
 ```powershell
-python soletrando.py --model large-v3
-python soletrando.py --model small --language en
+# 1. Record samples by reading phrases (replace them with your own everyday phrases)
+python tools\benchmark_modelos.py gravar tools\frases_exemplo_pt.txt amostras
+
+# 2. Compare models on the GPU, using your configured vocabulary and corrections
+python tools\benchmark_modelos.py medir amostras --modelos large-v3-turbo large-v3 --usar-config
 ```
 
-You can also change the model under **Configurações** without restarting the app.
-
-### Models — speed vs. accuracy
-
-| Model | Parameters | VRAM (GPU) / RAM (CPU) | Speed | Accuracy |
-|---|---|---|---|---|
-| `tiny` | 39 M | ~1 GB | Very fast | Low |
-| `base` | 74 M | ~1 GB | Fast | Fair |
-| `small` | 244 M | ~2 GB | Medium | Good |
-| `medium` | 769 M | ~5 GB | Medium | Very good |
-| **`large-v3-turbo`** | **809 M** | **~6 GB** | **Fast** | **Excellent** |
-| `large-v3` | 1550 M | ~10 GB | Slower | Excellent |
-
-`large-v3-turbo` is the default: same footprint as `medium` (809 M vs 769 M
-parameters), large-class accuracy (~0.4 pp average WER gap to full `large-v3`),
-and ~4× faster than `large-v3`. It drops only the English *translation* task,
-which SOLetrando does not use.
+The summary is printed in the terminal and details go to `resultado_benchmark.csv`. Recordings and results are git-ignored by default. Transcription parameters mirror the app's.
 
 ---
 
 ## Auto-start with Windows
 
-### From source
-
-Copy `soletrando_startup.vbs` to the Startup folder:
-
-```powershell
-copy soletrando_startup.vbs "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup\"
-```
-
-Edit the paths inside the `.vbs` file if needed.
-
-### From .exe
-
-Create a shortcut to `dist\soletrando\soletrando.exe` and place it in:
-
-```
-%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\
-```
+- **Executable:** tick the option during installation or run `install.bat`.
+- **Source:** `python install.py`, or copy `soletrando_startup.vbs` to `%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\` and adjust the paths inside it.
 
 ---
 
-## Configuration
+## Project structure
 
-Settings are saved in `%LOCALAPPDATA%\Soletrando\soletrando_config.json`
-(the same folder holds the log and the model cache):
-
-```json
-{
-  "hotkey_toggle": "scroll lock",
-  "hotkey_quit": "ctrl+shift+q",
-  "model": "large-v3-turbo",
-  "language": "pt",
-  "speech_language": "pt",
-  "beep_enabled": false,
-  "insert_mode": "paste",
-  "vocabulary": ["EnvironPact", "PROCLIM"],
-  "corrections": {"pro clima": "PROCLIM"},
-  "live_preview_enabled": true,
-  "overlay_width": 320,
-  "overlay_height": 110,
-  "overlay_recording_seconds": 0.0,
-  "overlay_done_seconds": 1.0,
-  "save_history": true,
-  "log_transcripts": false
-}
 ```
-
-You can edit this file directly or use the tray icon menu.
-
----
-
-## Tray Icon Menu
-
-Right-click the "S" icon in the system tray:
-
-- **Iniciar / parar gravação** — start or stop recording from the menu
-- **Configurações** — model, preview size, vocabulary, help, and diagnostics
-- **Copiar último ditado** — restore the latest result to the clipboard
-- **Mostrar controles** — open the floating panel with **Ler**
-- **Abrir histórico** — read dictations saved locally
-- **Tecla de gravar** — choose recording hotkey (ScrollLock, F8, F9, F10, Pause, Ctrl+Shift+F, etc.)
-- **Tecla de encerrar** — choose quit hotkey
-- **Idioma** — Portuguese, English, Spanish or auto-detect
-- **Idioma da leitura** — speech language, Portuguese by default
-- **Inserção de texto** — paste (fast) or type (compatible)
-- **Abrir pasta** — open the installation folder
-- **Encerrar** — quit SOLetrando
-
-Under **Configurações**, the **Diagnóstico** tab contains the technical log,
-dictation history, data folder, and uninstall action. **Como usar** provides a
-short guide. The preview has an always-visible scrollbar and can be dragged by
-its title. Its size is shown live while editing. The allowed range is 120 × 44
-to 1000 × 600 pixels. Below 220 × 76 pixels, it becomes a compact status-only
-indicator. Users can control when it disappears or close it immediately with
-the × button.
-
-### Read selected text aloud
-
-1. Highlight the text you want to hear in any application.
-2. If the floating panel is hidden, choose **Mostrar controles** from the tray icon, then select the text again.
-3. Click **Ler**. Click **Parar** to stop playback.
-
-You can also select part of SOLetrando's own preview. Speech uses locally
-installed Windows voices and prefers **pt-BR** by default. Speech language is
-independent of dictation language. For other selected languages, it looks for a matching
-installed voice and displays an error if none is available.
-
-If an application does not expose its selection to Windows accessibility, the
-app temporarily copies the selection and restores the previous clipboard text.
-This fallback is skipped when the clipboard contains an image, file, or rich formats.
-The floating panel must be at least 220 × 76 pixels to show the button.
+SOLetrando/
+├── soletrando.py          # Core: capture, model, hotkeys, insertion, and tray
+├── soletrando_config.py   # Options, defaults, and configuration validation
+├── soletrando_speech.py   # Read-aloud and selection capture
+├── soletrando_text.py     # Vocabulary, corrections, and preview merging
+├── soletrando_audio.py    # Beep sound
+├── soletrando_ui.py       # Floating panel and Settings window
+├── update.py              # Updater based on Releases
+├── install.py / .bat      # Desktop and Startup shortcuts
+├── soletrando.spec        # Executable build (PyInstaller)
+├── installer.iss          # Installer (Inno Setup)
+├── build.bat              # Executable and installer
+├── tools/                 # Model benchmark and sample phrases
+├── tests/                 # Automated tests (python -m unittest discover -s tests)
+└── version.txt
+```
 
 ---
 
 ## Troubleshooting
 
-| Problem | Solution |
+| Problem | What to do |
 |---|---|
-| `No module named 'faster_whisper'` | `pip install faster-whisper` |
-| CUDA not detected | Program will fall back to CPU automatically. For GPU, check NVIDIA drivers and PyTorch CUDA version |
-| Microphone not detected | `python -c "import sounddevice; print(sounddevice.query_devices())"` |
-| Text not appearing in app | Make sure cursor is in the target app before pressing the hotkey |
-| "Instance already running" | Delete `%TEMP%\soletrando.lock` or kill `pythonw.exe` |
-| Tray icon not visible | Click the `^` arrow in the taskbar to see hidden icons |
-| Hotkey stops responding after a few minutes | Fixed in the current version (see below). If it still happens, open the log from the tray menu and look for `Atalhos inativos` |
-| "Hotkey X is already reserved by another program" | Another application registered the same key first. Pick a different one under **Tecla de gravar** in the tray menu |
+| Text does not appear in the program | Make sure the cursor was in the field before recording. The text also stays on the clipboard and under Copy last dictation. In terminals, use **Digitar** (type) mode |
+| GPU is not used | The technical log shows `Modelo carregado: ... / cpu`. Check drivers and the CUDA 12 and cuDNN 9 libraries (see Requirements) |
+| Microphone not detected | `python -c "import sounddevice; print(sounddevice.query_devices())"` and the Windows default microphone |
+| "Already running" | End `soletrando.exe` or `pythonw.exe` in Task Manager |
+| Tray icon not visible | Click the `^` arrow on the taskbar and drag the icon to the visible area |
+| "Hotkey X is already reserved by another program" | Another app registered the same key first. Pick a different one in Settings |
 | Hotkey does not work inside a specific program | Programs running **as administrator** ignore hotkeys from normal programs (Windows UIPI protection). Run SOLetrando as administrator too |
+| Read-aloud says there is no voice | Install the voice in Windows Settings > Time & language > Speech |
+| Read-aloud does not get the selection | See "Read text aloud" above |
 
-### Why the hotkey used to stop working
+### Why the old hotkey used to stop working
 
-Until the previous version, hotkeys relied on a global keyboard hook
-(`WH_KEYBOARD_LL`, via the `keyboard` library). In that model **every**
-keystroke in **any** program runs Python code inside the hook.
+Older versions used a global keyboard hook (`WH_KEYBOARD_LL`, `keyboard` library): every keystroke in any program ran Python code. Windows gives that hook a time budget (`LowLevelHooksTimeout`, 300 ms by default) and silently removes it when the budget is exceeded. A heavy transcription or an antivirus scan was enough to kill the hotkey without warning.
 
-Windows gives that hook a time budget — the value of
-`HKCU\Control Panel\Desktop\LowLevelHooksTimeout`, 300 ms by default — and,
-starting with Windows 7, **silently removes the hook** when the budget is
-exceeded. A single heavy transcription (or an antivirus scanning the process)
-stalling the interpreter for more than 300 ms was enough to kill the hotkey:
-the app stayed open, the tray icon stayed there, the menu still worked — but
-the key never responded again until the app was restarted.
-
-Hotkeys now use `RegisterHotKey`, the Windows API designed for global
-shortcuts. It installs no hook: Windows delivers the event straight to
-SOLetrando's message queue. There is no time budget to exceed, no hook to be
-removed, and the per-keystroke cost for the rest of the system drops to zero.
-An internal monitor also re-checks the hotkeys every 30 seconds and
-re-registers any that stopped being valid.
-
-Expected side effect: `ScrollLock` is now consumed by SOLetrando, so the
-keyboard LED no longer toggles when it is used as the hotkey. Recording state
-is still shown by the tray icon color.
+Hotkeys now use `RegisterHotKey`, the Windows API designed for global shortcuts, with no hook and no time budget. An internal monitor re-checks the hotkeys every 10 seconds and re-registers any that stopped working. Side effect: `Scroll Lock` used as a hotkey no longer toggles the keyboard LED; the state is shown by the tray icon color.
 
 ---
 
 ## Credits
 
-- [faster-whisper](https://github.com/SYSTRAN/faster-whisper) — Transcription engine
-- [OpenAI Whisper](https://github.com/openai/whisper) — Language models
-- [pystray](https://github.com/moses-palmer/pystray) — System tray icon
-- [sounddevice](https://python-sounddevice.readthedocs.io/) — Audio capture
-
----
+- [faster-whisper](https://github.com/SYSTRAN/faster-whisper): transcription engine
+- [OpenAI Whisper](https://github.com/openai/whisper): speech recognition models
+- [pystray](https://github.com/moses-palmer/pystray): system tray icon
+- [sounddevice](https://python-sounddevice.readthedocs.io/): audio capture
 
 ## License
 

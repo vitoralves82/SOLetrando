@@ -1,0 +1,15 @@
+# Uma frase por linha. Linhas iniciadas por # sao ignoradas.
+# Troque ou complemente com frases do seu dia a dia: nomes, siglas e termos
+# que costumam dar erro sao os mais importantes para a comparacao.
+Bom dia, pessoal. Vou enviar o relatório revisado até sexta-feira à tarde.
+A reunião com o cliente foi remarcada para o dia 14 de outubro, às 9h30.
+O inventário de emissões considera os escopos 1, 2 e 3 do GHG Protocol.
+Precisamos revisar o capítulo de adaptação climática antes de enviar ao IBAMA.
+A EnvironPact e a OceanPact vão apresentar a proposta técnica na quarta.
+O custo estimado ficou em R$ 1,2 milhão, com margem de dez por cento.
+Por favor, confirme se o arquivo final está na pasta compartilhada do projeto.
+A taxa de desconto usada no modelo foi de oito vírgula cinco por cento ao ano.
+Eu acho que, se a gente mudar a ordem dos slides, a mensagem fica mais clara.
+O programa de monitoramento prevê campanhas trimestrais durante dois anos.
+Anota aí: ligar para a Mariana, revisar o orçamento e mandar o cronograma.
+A intensidade de carbono caiu de 0,42 para 0,35 tonelada de CO2 por unidade.

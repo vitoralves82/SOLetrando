@@ -26,14 +26,48 @@ from soletrando_text import (
     apply_corrections,
     build_initial_prompt,
     merge_preview_text,
-    normalize_corrections,
-    normalize_vocabulary,
+)
+from soletrando_config import (
+    DEFAULT_CONFIG,
+    HOTKEY_OPTIONS,
+    INSERT_MODE_OPTIONS,
+    LANGUAGE_OPTIONS,
+    MODEL_OPTIONS,
+    QUIT_KEY_OPTIONS,
+    READ_KEY_OPTIONS,
+    SPEECH_LANGUAGE_OPTIONS,
+    VALID_MODEL_KEYS,
+    describe_config_for_log,
+    is_valid_language,
+    sanitize_config,
 )
 from soletrando_audio import build_tone_wav
 from soletrando_ui import StatusOverlay, show_settings_window
-from soletrando_speech import SpeechReader, selected_text
+from soletrando_speech import NO_VOICE_ERROR, SpeechReader, selected_text
 
 IS_WINDOWS = os.name == "nt"
+
+def get_app_version():
+    """Versao do version.txt, no codigo-fonte ou dentro do executavel."""
+    if getattr(sys, "frozen", False):
+        candidates = [Path(sys.executable).parent / "version.txt"]
+    else:
+        candidates = [Path(__file__).parent / "version.txt"]
+    bundle_dir = getattr(sys, "_MEIPASS", None)
+    if bundle_dir:
+        candidates.append(Path(bundle_dir) / "version.txt")
+    for path in candidates:
+        try:
+            value = path.read_text(encoding="utf-8").strip()
+            if value:
+                return value
+        except OSError:
+            continue
+    return ""
+
+
+APP_VERSION = get_app_version()
+
 
 # =====================================================================
 # SPLASH SCREEN (fecha automaticamente ao carregar o modelo)
@@ -49,14 +83,19 @@ def show_splash():
         import tkinter as tk
         from PIL import Image, ImageTk
 
+        background = "#F7F8FA"
         _splash = tk.Tk()
         _splash.overrideredirect(True)
         _splash.attributes("-topmost", True)
-        w, h = 320, 200
+        w, h = 340, 210
         x = (_splash.winfo_screenwidth() - w) // 2
         y = (_splash.winfo_screenheight() - h) // 2
         _splash.geometry(f"{w}x{h}+{x}+{y}")
-        _splash.configure(bg="#1a1a2e")
+        # Mesmo tema claro da caixa flutuante e das configuracoes.
+        _splash.configure(bg="#D9DEE7")
+        body = tk.Frame(_splash, bg=background)
+        body.pack(fill="both", expand=True, padx=1, pady=1)
+        tk.Frame(body, bg="#F2BC2E", height=5).pack(fill="x")
 
         # Icone
         if getattr(sys, "frozen", False):
@@ -67,21 +106,27 @@ def show_splash():
         if icon_path.exists():
             icon_img = Image.open(icon_path).resize((64, 64), Image.LANCZOS)
             icon_photo = ImageTk.PhotoImage(icon_img)
-            icon_label = tk.Label(_splash, image=icon_photo, bg="#1a1a2e")
+            icon_label = tk.Label(body, image=icon_photo, bg=background)
             icon_label.image = icon_photo
-            icon_label.pack(pady=(20, 5))
+            icon_label.pack(pady=(18, 4))
 
         # Nome
         tk.Label(
-            _splash, text="SOLetrando",
-            font=("Segoe UI", 18), fg="white", bg="#1a1a2e",
-        ).pack(pady=(5, 2))
+            body, text="SOLetrando",
+            font=("Segoe UI Semibold", 18), fg="#111827", bg=background,
+        ).pack(pady=(2, 0))
 
         # Status
+        status = "Carregando o modelo de voz..."
         tk.Label(
-            _splash, text="Carregando modelo...",
-            font=("Segoe UI", 12), fg="#aaaaaa", bg="#1a1a2e",
-        ).pack(pady=(2, 10))
+            body, text=status,
+            font=("Segoe UI", 10), fg="#667085", bg=background,
+        ).pack(pady=(4, 0))
+        if APP_VERSION:
+            tk.Label(
+                body, text=f"versão {APP_VERSION}",
+                font=("Segoe UI", 8), fg="#98A2B3", bg=background,
+            ).pack(pady=(2, 10))
 
         _splash.update()
     except Exception:
@@ -177,150 +222,6 @@ def fatal(msg):
 # =====================================================================
 # CONFIG (hotkeys + modelo)
 # =====================================================================
-DEFAULT_CONFIG = {
-    "hotkey_toggle": "scroll lock",
-    "hotkey_quit": "ctrl+shift+q",
-    # large-v3-turbo: 809M params (praticamente o tamanho do medium) com
-    # precisao de classe "large" e varias vezes mais rapido. Torna o medium
-    # obsoleto em qualidade e velocidade.
-    "model": "large-v3-turbo",
-    "language": "pt",
-    "speech_language": "pt",
-    "beep_enabled": False,
-    # "paste" = Ctrl+V (instantaneo, unicode perfeito)
-    # "type"  = simula digitacao tecla a tecla (compativel com terminais)
-    "insert_mode": "paste",
-    # Termos que ajudam o modelo e substituicoes aplicadas ao resultado final.
-    "vocabulary": [],
-    "corrections": {},
-    # A previa fica somente na janela flutuante. O campo de destino recebe o
-    # texto final uma unica vez, evitando duplicacoes durante o reconhecimento.
-    "live_preview_enabled": True,
-    "overlay_width": 320,
-    "overlay_height": 110,
-    # 0 = fica visivel durante toda a gravacao.
-    "overlay_recording_seconds": 0.0,
-    # -1 = permanece aberta; 0 = fecha imediatamente.
-    "overlay_done_seconds": 1.0,
-    "save_history": True,
-    # Texto integral pode conter informacao sensivel; o registro tecnico guarda
-    # apenas tamanho e desempenho por padrao.
-    "log_transcripts": False,
-}
-
-# Opcoes de hotkey disponiveis no menu
-HOTKEY_OPTIONS = [
-    ("ScrollLock", "scroll lock"),
-    ("F8", "f8"),
-    ("F9", "f9"),
-    ("F10", "f10"),
-    ("Pause", "pause"),
-    ("Ctrl+Shift+F", "ctrl+shift+f"),
-    ("Ctrl+Shift+R", "ctrl+shift+r"),
-    ("Ctrl+Alt+Space", "ctrl+alt+space"),
-]
-
-MODEL_OPTIONS = [
-    ("tiny (mais rapido)", "tiny"),
-    ("base", "base"),
-    ("small", "small"),
-    ("medium", "medium"),
-    ("large-v3-turbo (recomendado)", "large-v3-turbo"),
-    ("large-v3 (maxima precisao)", "large-v3"),
-]
-
-LANGUAGE_OPTIONS = [
-    ("Portugues", "pt"),
-    ("Ingles", "en"),
-    ("Espanhol", "es"),
-    ("Deteccao automatica", ""),
-]
-
-SPEECH_LANGUAGE_OPTIONS = [
-    ("Português (Brasil)", "pt"),
-    ("Inglês", "en"),
-    ("Espanhol", "es"),
-]
-
-QUIT_KEY_OPTIONS = [
-    ("Ctrl+Shift+Q", "ctrl+shift+q"),
-    ("Ctrl+Alt+Q", "ctrl+alt+q"),
-    ("Ctrl+Shift+E", "ctrl+shift+e"),
-]
-
-INSERT_MODE_OPTIONS = [
-    ("Colar (rapido)", "paste"),
-    ("Digitar (compativel)", "type"),
-]
-
-VALID_HOTKEY_TOGGLE_KEYS = {key for _, key in HOTKEY_OPTIONS}
-VALID_HOTKEY_QUIT_KEYS = {key for _, key in QUIT_KEY_OPTIONS}
-VALID_MODEL_KEYS = {key for _, key in MODEL_OPTIONS}
-VALID_INSERT_MODES = {key for _, key in INSERT_MODE_OPTIONS}
-
-
-def is_valid_language(value):
-    """Aceita "" (automatico) ou um codigo tipo pt, en, pt-br."""
-    if value == "":
-        return True
-    return bool(re.fullmatch(r"[a-z]{2,3}(-[a-z]{2,4})?", str(value).lower()))
-
-
-def sanitize_config(cfg):
-    """Normaliza configuracao para evitar valores invalidos/corrompidos."""
-    normalized = dict(DEFAULT_CONFIG)
-    if isinstance(cfg, dict):
-        normalized.update(cfg)
-        # Migra apenas o tamanho padrao da versao anterior. Valores realmente
-        # personalizados pelo usuario permanecem intactos.
-        if (
-            "overlay_done_seconds" not in cfg
-            and cfg.get("overlay_width") == 560
-            and cfg.get("overlay_height") == 180
-        ):
-            normalized["overlay_width"] = DEFAULT_CONFIG["overlay_width"]
-            normalized["overlay_height"] = DEFAULT_CONFIG["overlay_height"]
-
-    if normalized["hotkey_toggle"] not in VALID_HOTKEY_TOGGLE_KEYS:
-        normalized["hotkey_toggle"] = DEFAULT_CONFIG["hotkey_toggle"]
-    if normalized["hotkey_quit"] not in VALID_HOTKEY_QUIT_KEYS:
-        normalized["hotkey_quit"] = DEFAULT_CONFIG["hotkey_quit"]
-    if normalized["model"] not in VALID_MODEL_KEYS:
-        normalized["model"] = DEFAULT_CONFIG["model"]
-    if not is_valid_language(normalized.get("language")):
-        normalized["language"] = DEFAULT_CONFIG["language"]
-    if normalized.get("speech_language") not in {"pt", "en", "es"}:
-        normalized["speech_language"] = DEFAULT_CONFIG["speech_language"]
-    if not isinstance(normalized.get("beep_enabled"), bool):
-        normalized["beep_enabled"] = DEFAULT_CONFIG["beep_enabled"]
-    if normalized.get("insert_mode") not in VALID_INSERT_MODES:
-        normalized["insert_mode"] = DEFAULT_CONFIG["insert_mode"]
-    normalized["vocabulary"] = normalize_vocabulary(normalized.get("vocabulary"))
-    normalized["corrections"] = normalize_corrections(normalized.get("corrections"))
-    for key in ("live_preview_enabled", "save_history", "log_transcripts"):
-        if not isinstance(normalized.get(key), bool):
-            normalized[key] = DEFAULT_CONFIG[key]
-    for key, minimum, maximum in (
-        ("overlay_width", 120, 1000),
-        ("overlay_height", 44, 600),
-    ):
-        try:
-            normalized[key] = max(minimum, min(maximum, int(normalized[key])))
-        except (TypeError, ValueError):
-            normalized[key] = DEFAULT_CONFIG[key]
-    for key, minimum, maximum in (
-        ("overlay_recording_seconds", 0.0, 60.0),
-        ("overlay_done_seconds", -1.0, 60.0),
-    ):
-        try:
-            normalized[key] = max(
-                minimum, min(maximum, float(normalized[key]))
-            )
-        except (TypeError, ValueError):
-            normalized[key] = DEFAULT_CONFIG[key]
-    return normalized
-
-
 def load_config():
     try:
         if CONFIG_PATH.exists():
@@ -342,7 +243,7 @@ def save_config(cfg):
             f.flush()
             os.fsync(f.fileno())
         os.replace(tmp_path, CONFIG_PATH)
-        log(f"Config salva: {cfg}")
+        log(f"Config salva: {describe_config_for_log(cfg)}")
     except Exception as e:
         log(f"Erro ao salvar config: {e}")
 
@@ -445,6 +346,8 @@ if not ensure_single_instance():
 # =====================================================================
 # IMPORTS PESADOS
 # =====================================================================
+# Sem estatisticas de uso para o Hugging Face (so vale para downloads).
+os.environ.setdefault("HF_HUB_DISABLE_TELEMETRY", "1")
 try:
     import numpy as np
     from faster_whisper import WhisperModel
@@ -526,7 +429,7 @@ def build_model(model_name, on_status=None):
     Ter nvcuda.dll nao garante que o cuDNN esteja instalado; sem o fallback,
     o app simplesmente morria na inicializacao sem mensagem nenhuma.
     """
-    download_root, _cached = resolve_model_cache(model_name)
+    download_root, cached = resolve_model_cache(model_name)
     cpu_threads = min(8, os.cpu_count() or 4)
 
     attempts = []
@@ -535,24 +438,34 @@ def build_model(model_name, on_status=None):
         attempts.append(("cuda", "int8_float16"))
     attempts.append(("cpu", "int8"))
 
+    # Com o modelo em cache, carregamos sem consultar a internet. Antes o
+    # faster-whisper contatava o Hugging Face a cada inicializacao e, sem
+    # rede, so usava o cache depois da falha da conexao. Se o cache estiver
+    # incompleto, a segunda rodada permite completar o download.
+    rounds = [True, False] if cached else [False]
     last_error = None
-    for device, compute_type in attempts:
-        try:
-            if on_status:
-                on_status(f"Carregando '{model_name}' em {device.upper()} ({compute_type})...")
-            log(f"Carregando faster-whisper '{model_name}' em {device} ({compute_type})...")
-            m = WhisperModel(
-                model_name,
-                device=device,
-                compute_type=compute_type,
-                download_root=download_root,
-                cpu_threads=cpu_threads if device == "cpu" else 0,
-            )
-            log(f"Modelo carregado: {model_name} / {device} / {compute_type}")
-            return m, device, compute_type
-        except Exception as e:
-            last_error = e
-            log(f"Falha ao carregar em {device}/{compute_type}: {e}")
+    for local_only in rounds:
+        if not local_only and cached:
+            log("Cache local incompleto ou invalido; tentando com download")
+        for device, compute_type in attempts:
+            try:
+                if on_status:
+                    on_status(f"Carregando '{model_name}' em {device.upper()} ({compute_type})...")
+                log(f"Carregando faster-whisper '{model_name}' em {device} "
+                    f"({compute_type}{', somente local' if local_only else ''})...")
+                m = WhisperModel(
+                    model_name,
+                    device=device,
+                    compute_type=compute_type,
+                    download_root=download_root,
+                    cpu_threads=cpu_threads if device == "cpu" else 0,
+                    local_files_only=local_only,
+                )
+                log(f"Modelo carregado: {model_name} / {device} / {compute_type}")
+                return m, device, compute_type
+            except Exception as e:
+                last_error = e
+                log(f"Falha ao carregar em {device}/{compute_type}: {e}")
 
     raise RuntimeError(f"Nao foi possivel carregar o modelo '{model_name}': {last_error}")
 
@@ -660,6 +573,7 @@ DEBOUNCE_SECONDS = 0.35
 tray_icon = None
 current_hotkey_toggle = None
 current_hotkey_quit = None
+current_hotkey_read = None
 recording_session = 0      # identifica cada gravacao (usado pelo watchdog)
 watchdog_timer = None      # cancelado ao parar (antes vazava 1 thread/gravacao)
 status_overlay = StatusOverlay(
@@ -866,6 +780,7 @@ ERROR_HOTKEY_ALREADY_REGISTERED = 1409
 
 HOTKEY_ID_TOGGLE = 1
 HOTKEY_ID_QUIT = 2
+HOTKEY_ID_READ = 3
 
 _VK_BY_NAME = {
     "scroll lock": 0x91,
@@ -1173,22 +1088,27 @@ def register_hotkeys():
     if hotkey_manager is not None:
         hotkey_manager.set_callback(HOTKEY_ID_TOGGLE, "gravar", toggle)
         hotkey_manager.set_callback(HOTKEY_ID_QUIT, "encerrar", request_shutdown)
-        results = hotkey_manager.apply({
+        hotkey_manager.set_callback(HOTKEY_ID_READ, "ler", toggle_reading)
+        specs = {
             HOTKEY_ID_TOGGLE: config["hotkey_toggle"],
             HOTKEY_ID_QUIT: config["hotkey_quit"],
-        })
+        }
+        if config["hotkey_read"]:
+            specs[HOTKEY_ID_READ] = config["hotkey_read"]
+        results = hotkey_manager.apply(specs)
         if results is not None:
             _hotkey_backend = "win32"
             problems = {msg for msg in results.values() if msg}
             for msg in sorted(problems):
-                log(f"Atalho nao registrado: {msg}.")
                 if msg not in _notified_hotkey_problems:
+                    log(f"Atalho nao registrado: {msg}.")
                     notify(f"Atencao: {msg}.")
                     status_overlay.set_state("error", msg)
             _notified_hotkey_problems = problems
             if not problems:
                 log(f"Hotkeys ativas via RegisterHotKey: "
-                    f"toggle={config['hotkey_toggle']}, quit={config['hotkey_quit']}")
+                    f"toggle={config['hotkey_toggle']}, quit={config['hotkey_quit']}, "
+                    f"ler={config['hotkey_read'] or 'desativado'}")
             return not problems
         log("RegisterHotKey indisponivel; caindo para o hook do 'keyboard'")
 
@@ -1202,27 +1122,29 @@ def _register_hotkeys_fallback():
     nao subir no Windows. No Windows este caminho continua sujeito ao
     LowLevelHooksTimeout descrito no topo da secao, entao ele e ultimo recurso.
     """
-    global current_hotkey_toggle, current_hotkey_quit, _hotkey_backend
+    global current_hotkey_toggle, current_hotkey_quit, current_hotkey_read
+    global _hotkey_backend
 
     _hotkey_backend = "keyboard"
 
     # Remove hotkeys anteriores se existirem
-    try:
-        if current_hotkey_toggle is not None:
-            keyboard.remove_hotkey(current_hotkey_toggle)
-    except Exception:
-        pass
-    try:
-        if current_hotkey_quit is not None:
-            keyboard.remove_hotkey(current_hotkey_quit)
-    except Exception:
-        pass
+    for handle in (current_hotkey_toggle, current_hotkey_quit, current_hotkey_read):
+        try:
+            if handle is not None:
+                keyboard.remove_hotkey(handle)
+        except Exception:
+            pass
     current_hotkey_toggle = None
     current_hotkey_quit = None
+    current_hotkey_read = None
 
     try:
         current_hotkey_toggle = keyboard.add_hotkey(config["hotkey_toggle"], toggle)
         current_hotkey_quit = keyboard.add_hotkey(config["hotkey_quit"], request_shutdown)
+        if config["hotkey_read"]:
+            current_hotkey_read = keyboard.add_hotkey(
+                config["hotkey_read"], toggle_reading
+            )
         log(f"Hotkeys registradas (hook do 'keyboard'): "
             f"toggle={config['hotkey_toggle']}, quit={config['hotkey_quit']}")
         return True
@@ -1232,22 +1154,41 @@ def _register_hotkeys_fallback():
         return False
 
 
+def _apply_hotkey_change(config_key, key):
+    """Troca um atalho e desativa a leitura se ela passar a colidir."""
+    previous_read = config["hotkey_read"]
+    config[config_key] = key
+    config.update(sanitize_config(config))
+    save_config(config)
+    register_hotkeys()
+    rebuild_menu()
+    if previous_read and not config["hotkey_read"] and config_key != "hotkey_read":
+        notify("A tecla de leitura era a mesma e foi desativada. "
+               "Escolha outra em Configuracoes.")
+
+
 def change_hotkey_toggle(label, key):
     """Chamado pelo menu do tray para trocar hotkey."""
     def handler(icon, item):
-        config["hotkey_toggle"] = key
-        save_config(config)
-        register_hotkeys()
+        _apply_hotkey_change("hotkey_toggle", key)
         update_tray("idle")
         log(f"Hotkey alterada para: {label} ({key})")
     return handler
 
 
+def change_hotkey_read(label, key):
+    def handler(icon, item):
+        if key and key in {config["hotkey_toggle"], config["hotkey_quit"]}:
+            notify(f"{label} ja e usada para gravar ou encerrar.")
+            return
+        _apply_hotkey_change("hotkey_read", key)
+        log(f"Hotkey de leitura alterada para: {label} ({key or 'desativado'})")
+    return handler
+
+
 def change_hotkey_quit(label, key):
     def handler(icon, item):
-        config["hotkey_quit"] = key
-        save_config(config)
-        register_hotkeys()
+        _apply_hotkey_change("hotkey_quit", key)
         log(f"Hotkey encerrar alterada para: {label} ({key})")
     return handler
 
@@ -1472,8 +1413,12 @@ CF_UNICODETEXT = 13
 GMEM_MOVEABLE_ZEROINIT = 0x0042
 
 
-def copy_to_clipboard(text):
+def copy_to_clipboard(text, private=False):
     """Copia texto para o clipboard do Windows via ctypes (sem dependencias).
+
+    Com private=True, o texto vai acompanhado dos formatos documentados pela
+    Microsoft que o excluem do historico da area de transferencia (Win+V) e da
+    sincronizacao entre dispositivos. A colagem comum nao muda.
 
     Correcoes em relacao a versao anterior:
       - restype dos handles setado para c_void_p. Sem isso o ctypes truncava
@@ -1528,6 +1473,8 @@ def copy_to_clipboard(text):
             log("SetClipboardData falhou")
             return False
         h_mem = None  # propriedade transferida para o sistema
+        if private:
+            _mark_clipboard_private(user32, kernel32)
         log("Texto copiado para clipboard")
         return True
     except Exception as e:
@@ -1545,9 +1492,59 @@ def copy_to_clipboard(text):
             pass
 
 
-def copy_to_clipboard_reliable(text):
-    """Usa a API nativa e recorre ao PowerShell se outro processo interferir."""
-    if copy_to_clipboard(text):
+# Formatos registrados do Windows 10 1809+ para historico e nuvem. Um DWORD 0
+# em cada um pede que o conteudo atual nao seja guardado nem sincronizado.
+_PRIVATE_CLIPBOARD_FORMATS = (
+    "CanIncludeInClipboardHistory",
+    "CanUploadToCloudClipboard",
+)
+_private_clipboard_warned = False
+
+
+def _mark_clipboard_private(user32, kernel32):
+    """Chamado com o clipboard aberto, logo apos o texto ser gravado."""
+    global _private_clipboard_warned
+    user32.RegisterClipboardFormatW.restype = ctypes.c_uint
+    user32.RegisterClipboardFormatW.argtypes = [ctypes.c_wchar_p]
+    for name in _PRIVATE_CLIPBOARD_FORMATS:
+        handle = None
+        try:
+            fmt = user32.RegisterClipboardFormatW(name)
+            handle = kernel32.GlobalAlloc(GMEM_MOVEABLE_ZEROINIT, 4)
+            if not fmt or not handle:
+                raise OSError(f"formato {name} indisponivel")
+            # GMEM_ZEROINIT ja deixa os 4 bytes zerados, que e o valor pedido.
+            if not user32.SetClipboardData(fmt, handle):
+                raise OSError(f"SetClipboardData recusou {name}")
+            handle = None
+        except Exception as e:
+            if not _private_clipboard_warned:
+                _private_clipboard_warned = True
+                log(f"Nao foi possivel excluir o ditado do historico do Windows: {e}")
+        finally:
+            if handle:
+                try:
+                    kernel32.GlobalFree(handle)
+                except Exception:
+                    pass
+
+
+# Script do mecanismo alternativo. A entrada chega em UTF-8: com a codificacao
+# padrao do console (OEM), acentos como "ção" chegavam corrompidos.
+_CLIPBOARD_FALLBACK_SCRIPT = (
+    "[Console]::InputEncoding = New-Object System.Text.UTF8Encoding($false); "
+    "$value = [Console]::In.ReadToEnd(); Set-Clipboard -Value $value"
+)
+
+
+def copy_to_clipboard_reliable(text, private=None):
+    """Usa a API nativa e recorre ao PowerShell se outro processo interferir.
+
+    private=None segue a configuracao clipboard_private.
+    """
+    if private is None:
+        private = config.get("clipboard_private", True)
+    if copy_to_clipboard(text, private=private):
         return True
     if not IS_WINDOWS:
         return False
@@ -1556,17 +1553,20 @@ def copy_to_clipboard_reliable(text):
         result = subprocess.run(
             [
                 "powershell", "-NoProfile", "-NonInteractive", "-Command",
-                "$value = [Console]::In.ReadToEnd(); Set-Clipboard -Value $value",
+                _CLIPBOARD_FALLBACK_SCRIPT,
             ],
-            input=text,
-            text=True,
+            input=text.encode("utf-8"),
             capture_output=True,
             timeout=8,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
         if result.returncode == 0:
-            log("Texto copiado para clipboard pelo mecanismo alternativo")
+            # Set-Clipboard nao oferece os formatos de exclusao do historico.
+            log("Texto copiado para clipboard pelo mecanismo alternativo "
+                "(sem exclusao do historico do Windows)")
             return True
-        log(f"Mecanismo alternativo do clipboard falhou: {result.stderr.strip()}")
+        log("Mecanismo alternativo do clipboard falhou: "
+            f"{result.stderr.decode('utf-8', errors='replace').strip()}")
     except Exception as e:
         log(f"Erro no mecanismo alternativo do clipboard: {e}")
     return False
@@ -1895,7 +1895,7 @@ def toggle():
                 return
 
             if not is_recording:
-                stop_reading()
+                stop_reading(show_message=False)
                 start_recording()
                 return
 
@@ -1972,30 +1972,104 @@ def change_insert_mode(mode_key):
     log(f"Modo de insercao alterado para '{mode_key}'")
 
 
+SETTINGS_KEYS = {
+    "language", "hotkey_toggle", "hotkey_quit", "hotkey_read", "insert_mode",
+    "beep_enabled", "live_preview_enabled", "speech_language", "speech_rate",
+    "vocabulary", "corrections", "overlay_width", "overlay_height",
+    "overlay_recording_seconds", "overlay_done_seconds", "save_history",
+    "log_transcripts", "clipboard_private",
+}
+HOTKEY_KEYS = ("hotkey_toggle", "hotkey_quit", "hotkey_read")
+
+
 def _save_settings(values):
     """Recebe somente os campos editaveis da janela de configuracoes."""
     previous_model = config["model"]
     requested_model = values.get("model", previous_model)
-    allowed = {
-        "vocabulary", "corrections", "live_preview_enabled",
-        "overlay_width", "overlay_height", "overlay_recording_seconds",
-        "overlay_done_seconds", "save_history", "log_transcripts",
-    }
-    for key in allowed:
+    previous_hotkeys = {key: config[key] for key in HOTKEY_KEYS}
+    previous_language = config["language"]
+    for key in SETTINGS_KEYS:
         if key in values:
             config[key] = values[key]
-    sanitized = sanitize_config(config)
-    config.clear()
-    config.update(sanitized)
+    # update() sem clear(): outra thread pode ler config[...] neste instante.
+    config.update(sanitize_config(config))
     save_config(config)
     status_overlay.configure(
         config["overlay_width"], config["overlay_height"]
     )
+    if any(config[key] != previous_hotkeys[key] for key in HOTKEY_KEYS):
+        register_hotkeys()
+    if config["language"] != previous_language:
+        update_tray("idle")
     rebuild_menu()
     status_overlay.set_state("done", "Configurações salvas.", hide_after=1.0)
     log("Configuracoes atualizadas")
     if requested_model != previous_model:
         change_model(requested_model)
+
+
+def _delete_files(paths, use_log_lock=False):
+    """Apaga os arquivos existentes. Devolve (apagados, falhas)."""
+    removed, failed = 0, []
+    for path in paths:
+        try:
+            if use_log_lock:
+                with _log_lock:
+                    existed = path.exists()
+                    path.unlink(missing_ok=True)
+            else:
+                existed = path.exists()
+                path.unlink(missing_ok=True)
+            removed += int(existed)
+        except OSError as e:
+            failed.append(f"{path.name}: {e}")
+    return removed, failed
+
+
+def clear_history_files():
+    removed, failed = _delete_files([
+        HISTORY_PATH, HISTORY_PATH.with_suffix(".txt.1"), LAST_TRANSCRIPT_PATH,
+    ])
+    log(f"Historico apagado pelo usuario ({removed} arquivo(s))")
+    if failed:
+        return "Alguns arquivos não puderam ser apagados:\n" + "\n".join(failed)
+    return "Histórico apagado." if removed else "Não havia histórico salvo."
+
+
+def clear_log_files():
+    removed, failed = _delete_files(
+        [LOG_PATH, LOG_PATH.with_suffix(".log.1")], use_log_lock=True
+    )
+    log("Registro tecnico apagado pelo usuario")
+    if failed:
+        return "Alguns arquivos não puderam ser apagados:\n" + "\n".join(failed)
+    return "Registro técnico apagado."
+
+
+VOICE_SAMPLES = {
+    "pt": "Olá! Esta é a voz que o SOLetrando usará para ler o texto selecionado.",
+    "en": "Hello! This is the voice SOLetrando will use to read your selection.",
+    "es": "¡Hola! Esta es la voz que SOLetrando usará para leer la selección.",
+}
+
+
+def play_voice_sample(language, rate):
+    """Le uma frase curta com o idioma e a velocidade ainda nao salvos."""
+    if is_recording or is_transcribing:
+        return
+
+    def finished(ok, error):
+        if ok:
+            return
+        if error == NO_VOICE_ERROR:
+            message = NO_VOICE_MESSAGES.get(language, NO_VOICE_MESSAGES["pt"])
+        else:
+            log(f"Falha no teste de voz: {error}")
+            message = "A voz do Windows não pôde ler o exemplo."
+        status_overlay.set_state("error", message, hide_after=6.0, force_show=True)
+
+    speech_reader.set_on_done(finished)
+    speech_reader.speak(VOICE_SAMPLES.get(language, VOICE_SAMPLES["pt"]), language, rate)
 
 
 def on_open_settings(icon, item):
@@ -2004,6 +2078,9 @@ def on_open_settings(icon, item):
         "open_history": lambda: on_open_history(None, None),
         "open_folder": lambda: on_open_folder(None, None),
         "uninstall": lambda: on_uninstall(None, None),
+        "clear_history": clear_history_files,
+        "clear_log": clear_log_files,
+        "test_voice": play_voice_sample,
         "preview_overlay": lambda width, height: (
             status_overlay.configure(width, height),
             status_overlay.set_state(
@@ -2020,8 +2097,13 @@ def on_open_settings(icon, item):
         ),
         "hide_overlay": status_overlay.hide,
     }
+    about = {
+        "version": APP_VERSION,
+        "engine": f"{config['model']} em {device.upper()} ({compute_type})",
+        "data_dir": str(DATA_DIR),
+    }
     if not show_settings_window(
-        config, _save_settings, MODEL_OPTIONS, actions
+        config, _save_settings, MODEL_OPTIONS, actions, about
     ):
         notify("A janela de configuracoes ja esta aberta.")
 
@@ -2049,16 +2131,46 @@ def on_copy_last_transcript(icon, item):
 _reading_request_lock = threading.Lock()
 _reading_capture_lock = threading.Lock()
 _reading_request = 0
+_reading_capture_active = False
+
+NO_VOICE_MESSAGES = {
+    "pt": "Não há voz em português instalada no Windows. Instale em "
+          "Configurações > Hora e idioma > Fala.",
+    "en": "Não há voz em inglês instalada no Windows. Instale em "
+          "Configurações > Hora e idioma > Fala.",
+    "es": "Não há voz em espanhol instalada no Windows. Instale em "
+          "Configurações > Hora e idioma > Fala.",
+}
 
 
-def stop_reading():
+def stop_reading(show_message=True):
+    """Cancela a captura da selecao e a fala. Devolve True se havia algo."""
     global _reading_request
     with _reading_request_lock:
         _reading_request += 1
-    speech_reader.stop()
-    status_overlay.set_state(
-        "idle", "Leitura interrompida.", hide_after=2.0, force_show=True
-    )
+        was_capturing = _reading_capture_active
+    was_speaking = speech_reader.stop()
+    stopped = was_capturing or was_speaking
+    if stopped and show_message:
+        status_overlay.set_state(
+            "idle", "Leitura interrompida.", hide_after=2.0, force_show=True
+        )
+    return stopped
+
+
+def toggle_reading():
+    """Atalho de leitura: le a selecao ou, se ja estiver lendo, interrompe."""
+    if speech_reader.is_active() or _reading_capture_active:
+        stop_reading()
+        return
+    read_selection("")
+
+
+def _copy_selection_with_keyboard():
+    # Com o atalho de leitura (ex.: Ctrl+Alt+L) ainda pressionado, o Ctrl+C
+    # viraria Ctrl+Alt+C no aplicativo de destino.
+    wait_modifiers_released()
+    keyboard.send("ctrl+c")
 
 
 def read_selection(overlay_selection=""):
@@ -2076,31 +2188,43 @@ def read_selection(overlay_selection=""):
         request_id = _reading_request
 
     def finished(ok, error):
-        if not ok:
-            log(f"Falha na leitura por voz: {error}")
-            status_overlay.set_state(
-                "error", "A voz do Windows não pôde ler o texto.",
-                hide_after=4.0, force_show=True,
-            )
-        else:
+        if ok:
             status_overlay.set_state(
                 "done", "Leitura concluída.", hide_after=2.0,
                 force_show=True,
             )
+            return
+        if error == NO_VOICE_ERROR:
+            language = config["speech_language"]
+            log(f"Leitura por voz: nenhuma voz instalada para '{language}'")
+            message = NO_VOICE_MESSAGES.get(language, NO_VOICE_MESSAGES["pt"])
+        else:
+            log(f"Falha na leitura por voz: {error}")
+            message = "A voz do Windows não pôde ler o texto."
+        status_overlay.set_state("error", message, hide_after=6.0, force_show=True)
 
     def worker():
+        global _reading_capture_active
         with _reading_capture_lock:
             with _reading_request_lock:
                 if request_id != _reading_request:
                     return
+                _reading_capture_active = True
             try:
                 text = overlay_selection.strip() or selected_text(
-                    copy_selection=lambda: keyboard.send("ctrl+c"),
-                    restore_text=copy_to_clipboard_reliable,
+                    copy_selection=_copy_selection_with_keyboard,
+                    # O conteudo original do usuario volta sem gerar uma
+                    # segunda entrada no historico do Windows.
+                    restore_text=lambda original: copy_to_clipboard_reliable(
+                        original, private=True
+                    ),
                 )
             except Exception as e:
                 log(f"Falha ao obter selecao: {e}")
                 text = ""
+            finally:
+                with _reading_request_lock:
+                    _reading_capture_active = False
         with _reading_request_lock:
             if request_id != _reading_request:
                 return
@@ -2110,12 +2234,14 @@ def read_selection(overlay_selection=""):
                 hide_after=4.0, force_show=True,
             )
             return
-        speech_reader._on_done = finished
+        speech_reader.set_on_done(finished)
         status_overlay.set_state(
             "reading", "Lendo o texto selecionado...",
             force_show=True,
         )
-        speech_reader.speak(text, config["speech_language"])
+        speech_reader.speak(
+            text, config["speech_language"], config["speech_rate"]
+        )
 
     threading.Thread(target=worker, name="soletrando-selecao", daemon=True).start()
 
@@ -2132,10 +2258,10 @@ def on_show_controls(icon, item):
             "transcribing", "Preparando o texto final...", force_show=True,
         )
         return
-    status_overlay.set_state(
-        "idle", "Selecione um texto e clique em Ler.",
-        force_show=True,
-    )
+    hint = "Selecione um texto e clique em Ler"
+    if config["hotkey_read"]:
+        hint += f" ou use {config['hotkey_read'].title()}"
+    status_overlay.set_state("idle", hint + ".", force_show=True)
 
 
 def on_open_history(icon, item):
@@ -2224,6 +2350,7 @@ _health_thread = None
 
 def _health_loop():
     checks = 0
+    last_inactive = set()
     while not _shutdown_started.is_set():
         # wait() em vez de sleep(): o encerramento nao espera 30s por isto.
         if _shutdown_started.wait(HEALTH_CHECK_SECONDS):
@@ -2231,14 +2358,20 @@ def _health_loop():
         checks += 1
         try:
             if _hotkey_backend == "win32" and hotkey_manager is not None:
-                inactive = hotkey_manager.inactive_specs()
+                inactive = set(hotkey_manager.inactive_specs())
                 if inactive:
-                    log(f"Atalhos inativos detectados ({', '.join(inactive)}); "
-                        f"tentando registrar de novo")
-                    status_overlay.set_state(
-                        "error", "O atalho parou de responder. Tentando recuperar..."
-                    )
+                    # Um atalho tomado por outro programa continua sendo
+                    # tentado, mas sem repetir a mesma linha a cada 10 s.
+                    if inactive != last_inactive:
+                        log(f"Atalhos inativos detectados ({', '.join(sorted(inactive))}); "
+                            f"tentando registrar de novo")
+                        status_overlay.set_state(
+                            "error", "O atalho parou de responder. Tentando recuperar..."
+                        )
                     register_hotkeys()
+                elif last_inactive:
+                    log("Atalhos recuperados")
+                last_inactive = inactive
             elif (_hotkey_backend == "keyboard"
                   and checks % FALLBACK_RELOAD_EVERY_CHECKS == 0):
                 # O hook antigo pode ser removido silenciosamente pelo Windows.
@@ -2304,6 +2437,16 @@ def build_menu():
         for label, key in QUIT_KEY_OPTIONS
     ]
 
+    read_items = [
+        pystray.MenuItem(
+            label,
+            change_hotkey_read(label, key),
+            checked=_radio_check("hotkey_read", key),
+            radio=True,
+        )
+        for label, key in READ_KEY_OPTIONS
+    ]
+
     language_items = _radio_items(LANGUAGE_OPTIONS, "language", change_language)
     speech_language_items = _radio_items(
         SPEECH_LANGUAGE_OPTIONS, "speech_language", change_speech_language
@@ -2313,17 +2456,20 @@ def build_menu():
     return pystray.Menu(
         pystray.MenuItem(lambda item: f"SOLetrando ({config['model']} / {device})", None, enabled=False),
         pystray.Menu.SEPARATOR,
-        pystray.MenuItem("Iniciar / parar gravacao", lambda icon, item: toggle()),
-        pystray.MenuItem("Configuracoes...", on_open_settings),
-        pystray.MenuItem("Copiar ultimo ditado", on_copy_last_transcript),
+        pystray.MenuItem("Iniciar / parar gravação", lambda icon, item: toggle()),
+        # default=True: um clique no icone da bandeja abre as configuracoes.
+        pystray.MenuItem("Configurações...", on_open_settings, default=True),
+        pystray.MenuItem("Copiar último ditado", on_copy_last_transcript),
         pystray.MenuItem("Mostrar controles", on_show_controls),
-        pystray.MenuItem("Abrir historico", on_open_history),
+        pystray.MenuItem("Parar leitura", lambda icon, item: stop_reading()),
+        pystray.MenuItem("Abrir histórico", on_open_history),
         pystray.Menu.SEPARATOR,
         pystray.MenuItem("Tecla de gravar", pystray.Menu(*toggle_items)),
+        pystray.MenuItem("Tecla de ler seleção", pystray.Menu(*read_items)),
         pystray.MenuItem("Tecla de encerrar", pystray.Menu(*quit_items)),
         pystray.MenuItem("Idioma", pystray.Menu(*language_items)),
         pystray.MenuItem("Idioma da leitura", pystray.Menu(*speech_language_items)),
-        pystray.MenuItem("Insercao de texto", pystray.Menu(*insert_items)),
+        pystray.MenuItem("Inserção de texto", pystray.Menu(*insert_items)),
         pystray.Menu.SEPARATOR,
         pystray.MenuItem(
             "Bip sonoro",
@@ -2389,9 +2535,10 @@ def main():
     log("SOLetrando ativo")
     log(f"  Gravar/Parar  = {config['hotkey_toggle']}")
     log(f"  Encerrar      = {config['hotkey_quit']}")
+    log(f"  Ler selecao   = {config['hotkey_read'] or 'desativado'}")
     log(f"  Modelo        = {config['model']} ({device}/{compute_type})")
     log(f"  Idioma        = {config['language'] or 'auto'}")
-    log(f"  Leitura       = {config['speech_language']}")
+    log(f"  Leitura       = {config['speech_language']} (velocidade {config['speech_rate']})")
     log(f"  Insercao      = {config['insert_mode']}")
     log(f"  Dados         = {DATA_DIR}")
     log("=" * 55)
