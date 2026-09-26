@@ -398,6 +398,31 @@ def choices_with_current(options, current, custom_label="Personalizado"):
     return options + [(f"{custom_label} ({current})", current)]
 
 
+AUTO_VOICE_LABEL = "Automática (primeira voz do idioma)"
+
+
+def voice_choices(voices, language, current=""):
+    """Opcoes (rotulo, nome) do seletor de voz para o idioma da leitura.
+
+    voices=None significa lista ainda nao carregada: a voz salva continua
+    selecionavel. Uma voz salva que nao esta mais instalada aparece marcada,
+    para o usuario perceber em vez de a escolha sumir ao salvar.
+    """
+    from soletrando_speech import is_online_voice, voices_for_language
+
+    options = [(AUTO_VOICE_LABEL, "")]
+    names = set()
+    for voice in voices_for_language(voices or [], language):
+        name = voice["name"]
+        names.add(name)
+        label = f"{name} (online)" if is_online_voice(name) else name
+        options.append((label, name))
+    if current and current not in names:
+        suffix = "" if voices is None else " (não encontrada)"
+        options.append((f"{current}{suffix}", current))
+    return options
+
+
 def validate_settings(values):
     """Devolve (aba, mensagem) com o primeiro problema, ou None."""
     read_key = values.get("hotkey_read", "")
@@ -454,7 +479,8 @@ GUIDE_TEXT = (
     "LER UM TEXTO EM VOZ ALTA\n"
     "Selecione o texto em qualquer programa e pressione a tecla de leitura "
     "(padrão: Ctrl+Alt+A). Pressione de novo para parar. Também é possível "
-    "selecionar um trecho na caixa flutuante e clicar em Ler.\n\n"
+    "selecionar um trecho na caixa flutuante e clicar em Ler. A voz é "
+    "escolhida em Leitura > Voz; Automática usa a primeira voz do idioma.\n\n"
     "SE A SELEÇÃO NÃO FOR LIDA\n"
     "Alguns programas não informam a seleção ao Windows. Nesses casos o "
     "SOLetrando copia a seleção por um instante e restaura a área de "
@@ -494,6 +520,7 @@ def show_settings_window(config, on_save, model_options=None, actions=None,
     snapshot = {key: config.get(key, value) for key, value in DEFAULT_CONFIG.items()}
     snapshot["vocabulary"] = list(snapshot["vocabulary"])
     snapshot["corrections"] = dict(snapshot["corrections"])
+    snapshot["speech_voices"] = dict(snapshot["speech_voices"])
 
     def run():
         global _settings_open
@@ -663,7 +690,7 @@ def show_settings_window(config, on_save, model_options=None, actions=None,
                 )
 
             def choice(tab, row, text, options, current, width=30,
-                       custom_label="Personalizado"):
+                       custom_label="Personalizado", on_change=None):
                 options = choices_with_current(options, current, custom_label)
                 labels = [label for label, _value in options]
                 by_label = dict(options)
@@ -674,10 +701,13 @@ def show_settings_window(config, on_save, model_options=None, actions=None,
                 ttk.Label(tab, text=text).grid(
                     row=row, column=0, sticky="w", pady=4, padx=(0, 16)
                 )
-                ttk.Combobox(
+                box = ttk.Combobox(
                     tab, textvariable=variable, state="readonly",
                     values=labels, width=width,
-                ).grid(row=row, column=1, sticky="w", pady=4)
+                )
+                box.grid(row=row, column=1, sticky="w", pady=4)
+                if on_change:
+                    box.bind("<<ComboboxSelected>>", lambda _event: on_change())
                 return lambda: by_label.get(variable.get(), current)
 
             # ---------------- Ditado ----------------
@@ -737,37 +767,164 @@ def show_settings_window(config, on_save, model_options=None, actions=None,
                 tab,
                 "Selecione um texto em qualquer programa e pressione a tecla "
                 "de leitura. Pressione de novo para parar. As vozes são as "
-                "instaladas no Windows e funcionam sem internet.",
+                "instaladas no Windows; as locais funcionam sem internet.",
                 1, top=0,
             )
             get_read_key = choice(
                 tab, 2, "Tecla de leitura", READ_KEY_OPTIONS,
                 snapshot["hotkey_read"],
             )
+            # Voz escolhida por idioma. A lista vem do Windows numa thread
+            # separada (pode levar alguns segundos) e so e aplicada na thread
+            # da janela, pelo after().
+            voice_state = {
+                "voices": None,
+                "language": snapshot["speech_language"],
+                "chosen": dict(snapshot["speech_voices"]),
+                "options": {},
+                "loading": False,
+            }
+            voice_var = tk.StringVar()
+            voice_status_var = tk.StringVar()
+
+            def remember_voice():
+                value = voice_state["options"].get(voice_var.get())
+                if value is None:
+                    return
+                if value:
+                    voice_state["chosen"][voice_state["language"]] = value
+                else:
+                    voice_state["chosen"].pop(voice_state["language"], None)
+
+            def fill_voices():
+                language = voice_state["language"]
+                voices = voice_state["voices"]
+                current = voice_state["chosen"].get(language, "")
+                options = voice_choices(voices, language, current)
+                voice_state["options"] = dict(options)
+                voice_box.configure(values=[label for label, _ in options])
+                voice_var.set(
+                    next(label for label, value in options if value == current)
+                )
+                if voices is None:
+                    voice_status_var.set("Procurando as vozes instaladas...")
+                    return
+                installed = {voice["name"] for voice in voices}
+                found = sum(1 for _label, value in options if value in installed)
+                if not found:
+                    message = "Nenhuma voz instalada para este idioma."
+                elif found == 1:
+                    message = "1 voz instalada para este idioma."
+                else:
+                    message = f"{found} vozes instaladas para este idioma."
+                if any(label.endswith("(online)") for label, _ in options):
+                    message += (
+                        " Vozes online precisam de internet e enviam o texto "
+                        "para fora do computador."
+                    )
+                voice_status_var.set(message)
+
+            def language_changed():
+                remember_voice()
+                voice_state["language"] = get_speech_language()
+                fill_voices()
+
             get_speech_language = choice(
                 tab, 3, "Idioma da voz", SPEECH_LANGUAGE_OPTIONS,
-                snapshot["speech_language"],
+                snapshot["speech_language"], on_change=language_changed,
             )
+            ttk.Label(tab, text="Voz").grid(
+                row=4, column=0, sticky="w", pady=4, padx=(0, 16)
+            )
+            voice_box = ttk.Combobox(
+                tab, textvariable=voice_var, state="readonly", width=48,
+            )
+            voice_box.grid(row=4, column=1, sticky="w", pady=4)
+            voice_box.bind(
+                "<<ComboboxSelected>>", lambda _event: remember_voice()
+            )
+
+            def load_voices():
+                list_voices = actions.get("list_voices")
+                if not list_voices or voice_state["loading"]:
+                    return
+                voice_state["loading"] = True
+                refresh_button.state(["disabled"])
+                remember_voice()
+                voice_state["voices"] = None
+                fill_voices()
+                result = queue.Queue()
+
+                def worker():
+                    try:
+                        result.put(list(list_voices() or []))
+                    except Exception:
+                        result.put([])
+
+                def check():
+                    try:
+                        voices = result.get_nowait()
+                    except queue.Empty:
+                        root.after(150, check)
+                        return
+                    voice_state["voices"] = voices
+                    voice_state["loading"] = False
+                    refresh_button.state(["!disabled"])
+                    fill_voices()
+
+                threading.Thread(
+                    target=worker, name="soletrando-vozes", daemon=True
+                ).start()
+                root.after(150, check)
+
+            ttk.Label(
+                tab, textvariable=voice_status_var, style="Muted.TLabel",
+                wraplength=wrap - 170, justify="left",
+            ).grid(row=5, column=1, sticky="w", pady=(0, 6))
+
+            def get_speech_voices():
+                remember_voice()
+                return dict(voice_state["chosen"])
+
+            def get_voice():
+                return voice_state["options"].get(voice_var.get(), "")
+
             get_speech_rate = choice(
-                tab, 4, "Velocidade da voz", SPEECH_RATE_OPTIONS,
+                tab, 6, "Velocidade da voz", SPEECH_RATE_OPTIONS,
                 snapshot["speech_rate"],
             )
 
             def test_voice():
                 callback = actions.get("test_voice")
                 if callback:
-                    callback(get_speech_language(), get_speech_rate())
+                    callback(get_speech_language(), get_speech_rate(), get_voice())
 
-            test_button = ttk.Button(tab, text="Ouvir exemplo", command=test_voice)
-            test_button.grid(row=5, column=1, sticky="w", pady=(8, 4))
+            voice_buttons = ttk.Frame(tab)
+            voice_buttons.grid(row=7, column=1, sticky="w", pady=(8, 4))
+            test_button = ttk.Button(
+                voice_buttons, text="Ouvir exemplo", command=test_voice
+            )
+            test_button.pack(side="left")
+            refresh_button = ttk.Button(
+                voice_buttons, text="Atualizar lista", command=load_voices
+            )
+            refresh_button.pack(side="left", padx=(8, 0))
             if "test_voice" not in actions:
                 test_button.state(["disabled"])
             hint(
                 tab,
                 "Sem voz no idioma escolhido? Instale em Configurações do "
-                "Windows > Hora e idioma > Fala > Adicionar vozes.",
-                6, top=10,
+                "Windows > Hora e idioma > Fala > Adicionar vozes e clique em "
+                "Atualizar lista. A lista mostra as vozes SAPI 5, as mesmas "
+                "de Painel de Controle > Fala.",
+                8, top=10,
             )
+            fill_voices()
+            if "list_voices" in actions:
+                load_voices()
+            else:
+                refresh_button.state(["disabled"])
+                voice_status_var.set("")
 
             # ---------------- Vocabulário ----------------
             tab = tabs["vocabulary"]
@@ -1038,6 +1195,7 @@ def show_settings_window(config, on_save, model_options=None, actions=None,
                     "beep_enabled": beep_var.get(),
                     "live_preview_enabled": preview_var.get(),
                     "speech_language": get_speech_language(),
+                    "speech_voices": get_speech_voices(),
                     "speech_rate": get_speech_rate(),
                     "overlay_width": width,
                     "overlay_height": height,

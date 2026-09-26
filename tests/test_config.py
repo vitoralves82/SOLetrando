@@ -45,6 +45,22 @@ class SanitizeConfigTests(unittest.TestCase):
         self.assertTrue(config["clipboard_private"])
         self.assertEqual(config["overlay_width"], DEFAULT_CONFIG["overlay_width"])
 
+    def test_speech_voices_keep_only_valid_language_and_name(self):
+        voices = sanitize_config({
+            "speech_voices": {
+                "pt": "  Microsoft Francisca (Natural) - Portuguese (Brazil) ",
+                "en": "",
+                "es": "Voz\ncom quebra",
+                "fr": "Microsoft Hortense",
+                "xx": 3,
+            }
+        })["speech_voices"]
+        self.assertEqual(
+            voices, {"pt": "Microsoft Francisca (Natural) - Portuguese (Brazil)"}
+        )
+        self.assertEqual(sanitize_config({"speech_voices": "Maria"})["speech_voices"], {})
+        self.assertEqual(sanitize_config({})["speech_voices"], {})
+
     def test_speech_rate_is_limited_to_windows_range(self):
         self.assertEqual(sanitize_config({"speech_rate": 25})["speech_rate"], 10)
         self.assertEqual(sanitize_config({"speech_rate": -25})["speech_rate"], -10)

@@ -20,7 +20,7 @@ Pressione **Scroll Lock**, fale e pressione de novo: o texto aparece onde estive
 
 - **Processamento local:** o áudio e o texto são processados no computador. A internet é usada para baixar o modelo de reconhecimento na primeira vez.
 - **Ditado com prévia:** uma caixa flutuante mostra o texto enquanto você fala; o resultado final é inserido de uma vez no campo de destino.
-- **Leitura em voz alta** do texto selecionado em qualquer programa, com as vozes instaladas no *Windows*, velocidade ajustável e atalho próprio.
+- **Leitura em voz alta** do texto selecionado em qualquer programa, com a voz do *Windows* que você escolher, velocidade ajustável e atalho próprio.
 - **Vocabulário e correções pessoais** para nomes, siglas e termos recorrentes.
 - **Último ditado e histórico local** para recuperar um texto depois.
 - **Privacidade configurável:** o registro técnico não guarda vocabulário nem correções, e o ditado pode ficar fora do histórico da área de transferência do *Windows* (Win+V).
@@ -105,7 +105,16 @@ Se o texto não chegar ao destino, ele continua na área de transferência (Ctrl
 1. Selecione o texto em qualquer programa.
 2. Pressione **Ctrl+Alt+A** (ou a tecla escolhida). Pressione de novo para parar.
 
-Também é possível selecionar um trecho na caixa flutuante e clicar em **Ler**. Em **Configurações > Leitura** você escolhe idioma, velocidade e ouve um exemplo. Se faltar voz no idioma, o aviso indica onde instalá-la no *Windows* (Configurações > Hora e idioma > Fala).
+Também é possível selecionar um trecho na caixa flutuante e clicar em **Ler**. Em **Configurações > Leitura** você escolhe idioma, voz e velocidade e ouve um exemplo. Se faltar voz no idioma, o aviso indica onde instalá-la no *Windows* (Configurações > Hora e idioma > Fala).
+
+**Escolha da voz**
+
+- A lista mostra as vozes SAPI 5 do idioma, as mesmas de Painel de Controle > Fala. As vozes do Brasil aparecem primeiro.
+- **Automática** usa a primeira voz do idioma (pt-BR para português). É o padrão.
+- A escolha fica salva por idioma. Se a voz escolhida for desinstalada, a leitura usa a automática e avisa.
+- Instalou uma voz com a janela aberta? Clique em **Atualizar lista**.
+- As vozes naturais do Narrador do *Windows* 11 não são SAPI 5. Adaptadores de terceiros, não oficiais, podem expô-las ao SAPI 5; nesse caso, elas aparecem na lista.
+- Vozes marcadas como **(online)** precisam de internet e enviam o texto lido a um serviço externo. Para manter a leitura local, desative as vozes online no programa que as instalou.
 
 Alguns programas não informam a seleção aos recursos de acessibilidade do *Windows*. Nesses casos, o SOLetrando copia a seleção por um instante e restaura a área de transferência, mas **só quando ela contém texto simples**, para não perder imagens ou formatação copiadas antes. Se a leitura falhar, copie algo como texto simples (por exemplo, no bloco de notas) e tente de novo.
 
@@ -116,7 +125,7 @@ Um clique no ícone da bandeja abre a janela com as abas:
 | Aba | Conteúdo |
 |---|---|
 | **Ditado** | Modelo, idioma, teclas de gravar e encerrar, modo de inserção, prévia e bip |
-| **Leitura** | Tecla de leitura, idioma e velocidade da voz, botão Ouvir exemplo |
+| **Leitura** | Tecla de leitura, idioma, voz e velocidade, botões Ouvir exemplo e Atualizar lista |
 | **Vocabulário** | Termos preferenciais e correções automáticas (`ouvido = correto`) |
 | **Caixa flutuante** | Tamanho (com prévia ao vivo) e quando ocultar |
 | **Privacidade** | Histórico, registro técnico, área de transferência, o que fica salvo e botões para apagar |
@@ -292,7 +301,7 @@ Press **Scroll Lock**, speak, press again: the text appears wherever the cursor 
 
 - **Local processing:** audio and text are processed on your computer. The internet is used to download the speech model the first time.
 - **Dictation with live preview:** a floating panel shows the text while you speak; the final result is inserted once into the target field.
-- **Read aloud** the text selected in any program, using the voices installed in Windows, with adjustable speed and its own hotkey.
+- **Read aloud** the text selected in any program, using the Windows voice you choose, with adjustable speed and its own hotkey.
 - **Personal vocabulary and corrections** for names, acronyms, and recurring terms.
 - **Last dictation and local history** to recover text later.
 - **Configurable privacy:** the technical log never stores vocabulary or corrections, and dictations can be kept out of the Windows clipboard history (Win+V).
@@ -377,7 +386,16 @@ If the text does not reach the target, it stays on the clipboard (Ctrl+V) and un
 1. Select the text in any program.
 2. Press **Ctrl+Alt+A** (or your chosen hotkey). Press again to stop.
 
-You can also select part of the floating panel's text and click **Ler** (Read). Under **Configurações > Leitura** you choose the voice language and speed and can play a sample. If no voice is installed for that language, the warning explains where to add one in Windows (Settings > Time & language > Speech).
+You can also select part of the floating panel's text and click **Ler** (Read). Under **Configurações > Leitura** you choose the language, voice, and speed and can play a sample. If no voice is installed for that language, the warning explains where to add one in Windows (Settings > Time & language > Speech).
+
+**Choosing the voice**
+
+- The list shows the SAPI 5 voices for the language, the same ones found in Control Panel > Speech. Brazilian voices come first.
+- **Automática** (Automatic) uses the first voice for the language (pt-BR for Portuguese). This is the default.
+- The choice is saved per language. If the chosen voice is uninstalled, reading falls back to the automatic voice and shows a warning.
+- Installed a voice while the window was open? Click **Atualizar lista** (Refresh list).
+- Windows 11 Narrator natural voices are not SAPI 5 voices. Unofficial third-party adapters can expose them to SAPI 5; in that case they show up in the list.
+- Voices marked **(online)** need internet access and send the text being read to an external service. To keep reading local, turn off online voices in the program that installed them.
 
 Some programs do not expose their selection to Windows accessibility. In that case SOLetrando briefly copies the selection and restores the clipboard, **but only when the clipboard holds plain text**, so images or rich formatting copied earlier are never lost. If reading fails, copy some plain text (for example, in Notepad) and try again.
 
@@ -388,7 +406,7 @@ A single click on the tray icon opens a window with these tabs:
 | Tab | Contents |
 |---|---|
 | **Ditado** (Dictation) | Model, language, record and quit hotkeys, insertion mode, preview, and beep |
-| **Leitura** (Reading) | Read-aloud hotkey, voice language and speed, sample button |
+| **Leitura** (Reading) | Read-aloud hotkey, language, voice, and speed, sample and refresh-list buttons |
 | **Vocabulário** (Vocabulary) | Preferred terms and automatic corrections (`heard = correct`) |
 | **Caixa flutuante** (Floating panel) | Size (with live preview) and when to hide |
 | **Privacidade** (Privacy) | History, technical log, clipboard option, what is stored, and delete buttons |

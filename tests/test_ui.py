@@ -1,9 +1,11 @@
 import unittest
 
 from soletrando_ui import (
+    AUTO_VOICE_LABEL,
     StatusOverlay,
     choices_with_current,
     validate_settings,
+    voice_choices,
 )
 
 
@@ -63,6 +65,47 @@ class SettingsHelpersTests(unittest.TestCase):
         )
         self.assertEqual(
             validate_settings(self.valid_values(overlay_height=None))[0], "overlay"
+        )
+
+
+class VoiceChoicesTests(unittest.TestCase):
+    VOICES = [
+        {"name": "Microsoft Helia - Portuguese (Portugal)", "culture": "pt-PT"},
+        {"name": "Microsoft Maria Desktop - Portuguese(Brazil)", "culture": "pt-BR"},
+        {"name": "Microsoft Thalita Online (Natural) - Portuguese (Brazil)", "culture": "pt-BR"},
+        {"name": "Microsoft Zira Desktop - English (United States)", "culture": "en-US"},
+    ]
+
+    def test_automatic_first_then_brazilian_voices(self):
+        options = voice_choices(self.VOICES, "pt")
+        self.assertEqual(options[0], (AUTO_VOICE_LABEL, ""))
+        self.assertEqual(
+            [value for _label, value in options[1:]],
+            [
+                "Microsoft Maria Desktop - Portuguese(Brazil)",
+                "Microsoft Thalita Online (Natural) - Portuguese (Brazil)",
+                "Microsoft Helia - Portuguese (Portugal)",
+            ],
+        )
+
+    def test_online_voice_is_labelled(self):
+        labels = [label for label, _value in voice_choices(self.VOICES, "pt")]
+        self.assertIn(
+            "Microsoft Thalita Online (Natural) - Portuguese (Brazil) (online)",
+            labels,
+        )
+
+    def test_saved_voice_that_disappeared_stays_visible(self):
+        options = voice_choices(self.VOICES, "pt", "Microsoft Francisca")
+        self.assertEqual(
+            options[-1],
+            ("Microsoft Francisca (não encontrada)", "Microsoft Francisca"),
+        )
+
+    def test_saved_voice_is_kept_while_list_is_loading(self):
+        self.assertEqual(
+            voice_choices(None, "pt", "Microsoft Francisca"),
+            [(AUTO_VOICE_LABEL, ""), ("Microsoft Francisca", "Microsoft Francisca")],
         )
 
 

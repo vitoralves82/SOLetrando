@@ -43,7 +43,10 @@ from soletrando_config import (
 )
 from soletrando_audio import build_tone_wav
 from soletrando_ui import StatusOverlay, show_settings_window
-from soletrando_speech import NO_VOICE_ERROR, SpeechReader, selected_text
+from soletrando_speech import (
+    NO_VOICE_ERROR, VOICE_FALLBACK_NOTICE, SpeechReader, list_voices,
+    selected_text,
+)
 
 IS_WINDOWS = os.name == "nt"
 
@@ -1974,7 +1977,8 @@ def change_insert_mode(mode_key):
 
 SETTINGS_KEYS = {
     "language", "hotkey_toggle", "hotkey_quit", "hotkey_read", "insert_mode",
-    "beep_enabled", "live_preview_enabled", "speech_language", "speech_rate",
+    "beep_enabled", "live_preview_enabled", "speech_language", "speech_voices",
+    "speech_rate",
     "vocabulary", "corrections", "overlay_width", "overlay_height",
     "overlay_recording_seconds", "overlay_done_seconds", "save_history",
     "log_transcripts", "clipboard_private",
@@ -2053,13 +2057,29 @@ VOICE_SAMPLES = {
 }
 
 
-def play_voice_sample(language, rate):
-    """Le uma frase curta com o idioma e a velocidade ainda nao salvos."""
+def selected_voice(language):
+    """Nome da voz escolhida para o idioma; "" = automatica."""
+    return config.get("speech_voices", {}).get(language, "")
+
+
+VOICE_FALLBACK_MESSAGE = (
+    "A voz escolhida não foi encontrada; foi usada a primeira voz do idioma. "
+    "Confira a voz em Configurações > Leitura."
+)
+
+
+def play_voice_sample(language, rate, voice=""):
+    """Le uma frase curta com o idioma, a voz e a velocidade ainda nao salvos."""
     if is_recording or is_transcribing:
         return
 
     def finished(ok, error):
         if ok:
+            if error == VOICE_FALLBACK_NOTICE:
+                status_overlay.set_state(
+                    "error", VOICE_FALLBACK_MESSAGE, hide_after=6.0,
+                    force_show=True,
+                )
             return
         if error == NO_VOICE_ERROR:
             message = NO_VOICE_MESSAGES.get(language, NO_VOICE_MESSAGES["pt"])
@@ -2069,7 +2089,9 @@ def play_voice_sample(language, rate):
         status_overlay.set_state("error", message, hide_after=6.0, force_show=True)
 
     speech_reader.set_on_done(finished)
-    speech_reader.speak(VOICE_SAMPLES.get(language, VOICE_SAMPLES["pt"]), language, rate)
+    speech_reader.speak(
+        VOICE_SAMPLES.get(language, VOICE_SAMPLES["pt"]), language, rate, voice
+    )
 
 
 def on_open_settings(icon, item):
@@ -2081,6 +2103,7 @@ def on_open_settings(icon, item):
         "clear_history": clear_history_files,
         "clear_log": clear_log_files,
         "test_voice": play_voice_sample,
+        "list_voices": list_voices,
         "preview_overlay": lambda width, height: (
             status_overlay.configure(width, height),
             status_overlay.set_state(
@@ -2188,6 +2211,13 @@ def read_selection(overlay_selection=""):
         request_id = _reading_request
 
     def finished(ok, error):
+        if ok and error == VOICE_FALLBACK_NOTICE:
+            log("Leitura por voz: voz escolhida nao encontrada; usada a automatica")
+            status_overlay.set_state(
+                "error", VOICE_FALLBACK_MESSAGE, hide_after=6.0,
+                force_show=True,
+            )
+            return
         if ok:
             status_overlay.set_state(
                 "done", "Leitura concluída.", hide_after=2.0,
@@ -2239,8 +2269,9 @@ def read_selection(overlay_selection=""):
             "reading", "Lendo o texto selecionado...",
             force_show=True,
         )
+        language = config["speech_language"]
         speech_reader.speak(
-            text, config["speech_language"], config["speech_rate"]
+            text, language, config["speech_rate"], selected_voice(language)
         )
 
     threading.Thread(target=worker, name="soletrando-selecao", daemon=True).start()
@@ -2538,7 +2569,11 @@ def main():
     log(f"  Ler selecao   = {config['hotkey_read'] or 'desativado'}")
     log(f"  Modelo        = {config['model']} ({device}/{compute_type})")
     log(f"  Idioma        = {config['language'] or 'auto'}")
-    log(f"  Leitura       = {config['speech_language']} (velocidade {config['speech_rate']})")
+    log(
+        f"  Leitura       = {config['speech_language']} "
+        f"(voz {selected_voice(config['speech_language']) or 'automatica'}, "
+        f"velocidade {config['speech_rate']})"
+    )
     log(f"  Insercao      = {config['insert_mode']}")
     log(f"  Dados         = {DATA_DIR}")
     log("=" * 55)
