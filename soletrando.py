@@ -314,6 +314,8 @@ if not ensure_single_instance():
 # =====================================================================
 # IMPORTS PESADOS
 # =====================================================================
+# Sem estatisticas de uso para o Hugging Face (so vale para downloads).
+os.environ.setdefault("HF_HUB_DISABLE_TELEMETRY", "1")
 try:
     import numpy as np
     from faster_whisper import WhisperModel
@@ -395,7 +397,7 @@ def build_model(model_name, on_status=None):
     Ter nvcuda.dll nao garante que o cuDNN esteja instalado; sem o fallback,
     o app simplesmente morria na inicializacao sem mensagem nenhuma.
     """
-    download_root, _cached = resolve_model_cache(model_name)
+    download_root, cached = resolve_model_cache(model_name)
     cpu_threads = min(8, os.cpu_count() or 4)
 
     attempts = []
@@ -404,24 +406,34 @@ def build_model(model_name, on_status=None):
         attempts.append(("cuda", "int8_float16"))
     attempts.append(("cpu", "int8"))
 
+    # Com o modelo em cache, carregamos sem consultar a internet. Antes o
+    # faster-whisper contatava o Hugging Face a cada inicializacao e, sem
+    # rede, so usava o cache depois da falha da conexao. Se o cache estiver
+    # incompleto, a segunda rodada permite completar o download.
+    rounds = [True, False] if cached else [False]
     last_error = None
-    for device, compute_type in attempts:
-        try:
-            if on_status:
-                on_status(f"Carregando '{model_name}' em {device.upper()} ({compute_type})...")
-            log(f"Carregando faster-whisper '{model_name}' em {device} ({compute_type})...")
-            m = WhisperModel(
-                model_name,
-                device=device,
-                compute_type=compute_type,
-                download_root=download_root,
-                cpu_threads=cpu_threads if device == "cpu" else 0,
-            )
-            log(f"Modelo carregado: {model_name} / {device} / {compute_type}")
-            return m, device, compute_type
-        except Exception as e:
-            last_error = e
-            log(f"Falha ao carregar em {device}/{compute_type}: {e}")
+    for local_only in rounds:
+        if not local_only and cached:
+            log("Cache local incompleto ou invalido; tentando com download")
+        for device, compute_type in attempts:
+            try:
+                if on_status:
+                    on_status(f"Carregando '{model_name}' em {device.upper()} ({compute_type})...")
+                log(f"Carregando faster-whisper '{model_name}' em {device} "
+                    f"({compute_type}{', somente local' if local_only else ''})...")
+                m = WhisperModel(
+                    model_name,
+                    device=device,
+                    compute_type=compute_type,
+                    download_root=download_root,
+                    cpu_threads=cpu_threads if device == "cpu" else 0,
+                    local_files_only=local_only,
+                )
+                log(f"Modelo carregado: {model_name} / {device} / {compute_type}")
+                return m, device, compute_type
+            except Exception as e:
+                last_error = e
+                log(f"Falha ao carregar em {device}/{compute_type}: {e}")
 
     raise RuntimeError(f"Nao foi possivel carregar o modelo '{model_name}': {last_error}")
 
