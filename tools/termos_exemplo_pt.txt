@@ -1,0 +1,9 @@
+# Siglas, nomes e grafias que devem sair exatamente assim.
+# Uma entrada por linha; linhas iniciadas por # sao ignoradas.
+# Acrescente os termos do seu dia a dia (clientes, projetos, normas, lugares).
+GHG Protocol
+IBAMA
+EnvironPact
+OceanPact
+CO2
+Mariana

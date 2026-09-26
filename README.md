@@ -171,17 +171,43 @@ Na linha de comando:
 
 ### Bancada: comparar modelos com a sua voz
 
-A pasta `tools` traz uma bancada que mede, com as mesmas gravações, a taxa de erro de palavras (WER, *word error rate*: palavras trocadas, faltando ou sobrando, divididas pelo total da referência), o tempo após parar, o tempo de uma atualização da prévia e o pico de memória de vídeo.
+A pasta `tools` traz uma bancada que compara modelos com as mesmas gravações:
+
+| Métrica | O que mostra |
+|---|---|
+| **WER** (*word error rate*) | Palavras trocadas, faltando ou sobrando, divididas pelo total da referência, ignorando pontuação e maiúsculas. É a medida dos *benchmarks* públicos |
+| **WER formatado** | O mesmo, mas contando pontuação e maiúsculas. No ditado elas importam: um modelo que acerta as palavras e entrega tudo em minúsculas, sem vírgulas, obriga a revisar o texto |
+| **Acerto de termos** | Porcentagem de siglas e nomes escritos exatamente como na referência (`IBAMA`, não `Ibama`) |
+| Tempos e memória | Tempo após parar, tempo de uma atualização da prévia, fator de tempo real, pico de memória de vídeo e tempo de carga |
 
 ```powershell
 # 1. Gravar amostras lendo frases (troque as frases por outras do seu dia a dia)
 python tools\benchmark_modelos.py gravar tools\frases_exemplo_pt.txt amostras
 
 # 2. Comparar os modelos na GPU, com o vocabulário e as correções já configurados
-python tools\benchmark_modelos.py medir amostras --modelos large-v3-turbo large-v3 --usar-config
+python tools\benchmark_modelos.py medir amostras --modelos large-v3-turbo large-v3 --usar-config --termos tools\termos_exemplo_pt.txt
 ```
 
+Escreva o `.txt` de referência de cada amostra como você gostaria de ver o texto no documento (pontuação, maiúsculas, siglas e números). Com `--usar-config`, o vocabulário e as correções configurados também entram na lista de termos. O WER formatado é rigoroso (`9h30` contra `9:30` conta como erro); use-o para comparar modelos entre si, não como nota absoluta.
+
 O resumo sai no terminal e os detalhes em `resultado_benchmark.csv`. Gravações e resultados ficam fora do Git por padrão (`.gitignore`). Os parâmetros de transcrição espelham os do aplicativo.
+
+#### Testar um ajuste fino (*fine-tune*) do Whisper
+
+Modelos da família Whisper ajustados para português podem ser convertidos para o formato do aplicativo (CTranslate2) e comparados na mesma bancada. A conversão precisa de `transformers` e `torch`; faça isso num ambiente separado para não misturar com o do aplicativo:
+
+```powershell
+python -m venv .venv-conversao
+.\.venv-conversao\Scripts\activate
+pip install ctranslate2 transformers torch
+ct2-transformers-converter --model <repositorio-no-hugging-face> --output_dir modelos\meu-ajuste-ct2 --copy_files tokenizer.json preprocessor_config.json --quantization float16
+```
+
+Depois, no ambiente do aplicativo: `python tools\benchmark_modelos.py medir amostras --modelos large-v3 modelos\meu-ajuste-ct2 --usar-config`.
+
+Dois cuidados:
+- Copie o `preprocessor_config.json`. Modelos derivados do `large-v3` usam 128 faixas de frequência (*mel bins*); sem esse arquivo, o faster-whisper assume 80 e o modelo falha com erro de formato de entrada.
+- Confira a licença do ajuste fino antes de usar no trabalho e compare também o WER formatado. Ajustes feitos com corpora acadêmicos podem aprender a escrever sem pontuação, com números por extenso ou com hesitações ("é...", "né"), o que reduz o WER desses corpora mas piora o texto ditado.
 
 ---
 
@@ -207,7 +233,7 @@ SOLetrando/
 ├── soletrando.spec        # Geração do executável (PyInstaller)
 ├── installer.iss          # Instalador (Inno Setup)
 ├── build.bat              # Executável e instalador
-├── tools/                 # Bancada de modelos e frases de exemplo
+├── tools/                 # Bancada de modelos, frases e termos de exemplo
 ├── tests/                 # Testes automatizados (python -m unittest discover -s tests)
 └── version.txt
 ```
@@ -417,17 +443,43 @@ Command line:
 
 ### Benchmark: compare models with your voice
 
-The `tools` folder includes a benchmark that uses the same recordings to measure word error rate (WER: substituted, missing, or extra words divided by the reference length), time after stopping, time for one preview update, and peak video memory.
+The `tools` folder includes a benchmark that compares models on the same recordings:
+
+| Metric | What it shows |
+|---|---|
+| **WER** (word error rate) | Substituted, missing, or extra words divided by the reference length, ignoring punctuation and case. This is what public benchmarks report |
+| **Formatted WER** | The same, but punctuation and case count. They matter for dictation: a model that gets the words right but outputs lowercase text without commas forces you to edit it |
+| **Term accuracy** | Share of acronyms and names written exactly as in the reference (`IBAMA`, not `Ibama`) |
+| Timing and memory | Time after stopping, time for one preview update, real-time factor, peak video memory, and load time |
 
 ```powershell
 # 1. Record samples by reading phrases (replace them with your own everyday phrases)
 python tools\benchmark_modelos.py gravar tools\frases_exemplo_pt.txt amostras
 
 # 2. Compare models on the GPU, using your configured vocabulary and corrections
-python tools\benchmark_modelos.py medir amostras --modelos large-v3-turbo large-v3 --usar-config
+python tools\benchmark_modelos.py medir amostras --modelos large-v3-turbo large-v3 --usar-config --termos tools\termos_exemplo_pt.txt
 ```
 
+Write each sample's reference `.txt` the way you want the text to appear in your document (punctuation, case, acronyms, and numbers). With `--usar-config`, your configured vocabulary and corrections are added to the term list. Formatted WER is strict (`9h30` versus `9:30` counts as an error); use it to compare models with each other, not as an absolute score.
+
 The summary is printed in the terminal and details go to `resultado_benchmark.csv`. Recordings and results are git-ignored by default. Transcription parameters mirror the app's.
+
+#### Testing a Whisper fine-tune
+
+Whisper-family models fine-tuned for Portuguese can be converted to the app's format (CTranslate2) and compared on the same benchmark. Conversion needs `transformers` and `torch`; do it in a separate environment so it does not mix with the app's:
+
+```powershell
+python -m venv .venv-conversao
+.\.venv-conversao\Scripts\activate
+pip install ctranslate2 transformers torch
+ct2-transformers-converter --model <hugging-face-repository> --output_dir modelos\my-finetune-ct2 --copy_files tokenizer.json preprocessor_config.json --quantization float16
+```
+
+Then, in the app's environment: `python tools\benchmark_modelos.py medir amostras --modelos large-v3 modelos\my-finetune-ct2 --usar-config`.
+
+Two cautions:
+- Copy `preprocessor_config.json`. Models derived from `large-v3` use 128 mel bins; without that file, faster-whisper assumes 80 and the model fails with an input shape error.
+- Check the fine-tune's license before using it at work, and compare formatted WER too. Fine-tunes trained on academic corpora may learn to write without punctuation, spell out numbers, or keep hesitations ("é...", "né"), which lowers WER on those corpora but makes dictated text worse.
 
 ---
 
@@ -453,7 +505,7 @@ SOLetrando/
 ├── soletrando.spec        # Executable build (PyInstaller)
 ├── installer.iss          # Installer (Inno Setup)
 ├── build.bat              # Executable and installer
-├── tools/                 # Model benchmark and sample phrases
+├── tools/                 # Model benchmark, sample phrases, and terms
 ├── tests/                 # Automated tests (python -m unittest discover -s tests)
 └── version.txt
 ```
