@@ -427,6 +427,7 @@ def validate_settings(values):
     """Devolve (aba, mensagem) com o primeiro problema, ou None."""
     from soletrando_config import (
         VALID_HOTKEY_READ_KEYS, VALID_HOTKEY_TOGGLE_KEYS,
+        VALID_SPEECH_SPEED_KEYS,
         normalize_hotkey_spec,
     )
 
@@ -455,6 +456,20 @@ def validate_settings(values):
             "reading",
             "A tecla de leitura não pode ser a mesma tecla de encerrar.",
         )
+    used = {values["hotkey_toggle"], values["hotkey_quit"], read_key}
+    for key, label in (("hotkey_speech_slower", "desacelerar"),
+                       ("hotkey_speech_faster", "acelerar")):
+        normalized = normalize_hotkey_spec(
+            values.get(key), VALID_SPEECH_SPEED_KEYS, allow_shift_function=True,
+        )
+        if normalized is None:
+            return ("reading", f"Atalho para {label} inválido. Use F1 a F12, "
+                    "Shift+F1 a Shift+F12 ou uma combinação com Ctrl/Alt.")
+        if normalized and normalized in used:
+            return ("reading", f"O atalho para {label} já está em uso.")
+        values[key] = normalized
+        if normalized:
+            used.add(normalized)
     width = values.get("overlay_width")
     height = values.get("overlay_height")
     if not isinstance(width, int) or not 120 <= width <= 1000:
@@ -530,7 +545,7 @@ def show_settings_window(config, on_save, model_options=None, actions=None,
     from soletrando_config import (
         DEFAULT_CONFIG, HOTKEY_OPTIONS, INSERT_MODE_OPTIONS, LANGUAGE_OPTIONS,
         QUIT_KEY_OPTIONS, READ_KEY_OPTIONS, SPEECH_LANGUAGE_OPTIONS,
-        SPEECH_RATE_OPTIONS,
+        SPEECH_RATE_OPTIONS, SPEECH_SPEED_KEY_OPTIONS,
     )
 
     model_options = list(model_options or [])
@@ -956,6 +971,17 @@ def show_settings_window(config, on_save, model_options=None, actions=None,
                 voice_buttons, text="Atualizar lista", command=load_voices
             )
             refresh_button.pack(side="left", padx=(8, 0))
+            get_slower_key = choice(
+                tab, 10, "Desacelerar leitura", SPEECH_SPEED_KEY_OPTIONS,
+                snapshot["hotkey_speech_slower"], editable=True,
+            )
+            get_faster_key = choice(
+                tab, 11, "Acelerar leitura", SPEECH_SPEED_KEY_OPTIONS,
+                snapshot["hotkey_speech_faster"], editable=True,
+            )
+            hint(tab, "Durante a leitura, a nova velocidade começa no próximo "
+                 "trecho. Os atalhos também mudam a velocidade das próximas "
+                 "leituras.", 12, top=1)
             if "test_voice" not in actions:
                 test_button.state(["disabled"])
             hint(
@@ -1252,6 +1278,8 @@ def show_settings_window(config, on_save, model_options=None, actions=None,
                     "hotkey_toggle": get_toggle(),
                     "hotkey_quit": get_quit(),
                     "hotkey_read": get_read_key(),
+                    "hotkey_speech_slower": get_slower_key(),
+                    "hotkey_speech_faster": get_faster_key(),
                     "insert_mode": get_insert(),
                     "beep_enabled": beep_var.get(),
                     "live_preview_enabled": preview_var.get(),

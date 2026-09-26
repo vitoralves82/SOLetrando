@@ -36,6 +36,8 @@ class SettingsHelpersTests(unittest.TestCase):
             "hotkey_toggle": "scroll lock",
             "hotkey_quit": "ctrl+shift+q",
             "hotkey_read": "ctrl+alt+a",
+            "hotkey_speech_slower": "shift+f9",
+            "hotkey_speech_faster": "shift+f10",
             "overlay_width": 320,
             "overlay_height": 110,
         }
@@ -87,6 +89,15 @@ class SettingsHelpersTests(unittest.TestCase):
         self.assertEqual(
             validate_settings(self.valid_values(overlay_height=None))[0], "overlay"
         )
+
+    def test_speed_keys_accept_function_keys_and_reject_collisions(self):
+        values = self.valid_values(
+            hotkey_speech_slower="F10", hotkey_speech_faster="F11",
+        )
+        self.assertIsNone(validate_settings(values))
+        self.assertEqual(values["hotkey_speech_slower"], "f10")
+        self.assertEqual(validate_settings(self.valid_values(
+            hotkey_speech_faster="shift+f9"))[0], "reading")
 
 
 class VoiceChoicesTests(unittest.TestCase):

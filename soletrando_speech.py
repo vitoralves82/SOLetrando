@@ -4,6 +4,7 @@ import base64
 import ctypes
 import json
 import os
+import re
 import subprocess
 import threading
 import time
@@ -124,6 +125,74 @@ try {
 }
 if ($fallback) { exit 4 }
 """
+
+# Um processo e uma voz para todos os trechos. O Python envia a velocidade de
+# cada trecho apos receber o sinal de conclusao do anterior.
+_STREAM_SPEAK_SCRIPT = _SAPI_VOICES + r"""
+[Console]::InputEncoding = New-Object System.Text.UTF8Encoding($false)
+[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
+$first = [Console]::ReadLine()
+if ($null -eq $first) { exit 0 }
+$request = $first | ConvertFrom-Json
+$speaker = New-Object -ComObject SAPI.SpVoice
+$available = @(Get-SapiVoices $speaker)
+$language = [string]$request.language
+if ([string]::IsNullOrWhiteSpace($language)) { $language = 'pt' }
+$preferred = [string]$request.culture
+if ([string]::IsNullOrWhiteSpace($preferred)) { $preferred = $language }
+$wanted = [string]$request.voice
+$fallback = $false
+$chosen = $null
+if (-not [string]::IsNullOrWhiteSpace($wanted)) {
+    $chosen = $available | Where-Object { $_.name -eq $wanted } | Select-Object -First 1
+    if ($null -eq $chosen) { $fallback = $true }
+}
+if ($null -eq $chosen) {
+    $chosen = $available | Where-Object { $_.culture -eq $preferred } | Select-Object -First 1
+}
+if ($null -eq $chosen) {
+    $chosen = $available | Where-Object { $_.culture -like ($language + '-*') } | Select-Object -First 1
+}
+if ($null -eq $chosen) {
+    [Console]::Error.Write("Nenhuma voz instalada para $language")
+    exit 3
+}
+$speaker.Voice = $chosen.token
+$stream = $null
+if (-not [string]::IsNullOrWhiteSpace([string]$request.wav)) {
+    $stream = New-Object -ComObject SAPI.SpFileStream
+    $stream.Open([string]$request.wav, 3, $false)
+    $speaker.AudioOutputStream = $stream
+}
+while ($null -ne $request) {
+    $rate = [int]$request.rate
+    if ($rate -lt -10) { $rate = -10 } elseif ($rate -gt 10) { $rate = 10 }
+    $speaker.Rate = $rate
+    $null = $speaker.Speak([string]$request.text, 16)
+    [Console]::WriteLine('DONE')
+    $line = [Console]::ReadLine()
+    if ($null -eq $line) { break }
+    $request = $line | ConvertFrom-Json
+}
+if ($null -ne $stream) { $stream.Close() }
+if ($fallback) { exit 4 }
+"""
+
+
+def speech_chunks(text, max_chars=160):
+    """Divide em frases curtas sem perder palavras nem pontuacao."""
+    chunks, current = [], ""
+    for token in re.findall(r"\S+\s*", text):
+        if current and len(current) + len(token) > max_chars:
+            chunks.append(current)
+            current = ""
+        current += token
+        if re.search(r"[.!?…][\"'»)]?\s*$", token):
+            chunks.append(current)
+            current = ""
+    if current:
+        chunks.append(current)
+    return chunks
 
 
 def _powershell(script):
@@ -327,6 +396,7 @@ class SpeechReader:
         self._generation = 0
         self._pending = False
         self._on_done = on_done
+        self._rate = 0
 
     def set_on_done(self, callback):
         """callback(ok, erro); erro e NO_VOICE_ERROR quando falta voz.
@@ -351,16 +421,22 @@ class SpeechReader:
             self._generation += 1
             generation = self._generation
             self._pending = True
+            self._rate = int(rate)
         threading.Thread(
-            target=self._run, args=(text, language, rate, voice, generation),
+            target=self._run, args=(text, language, voice, generation),
             daemon=True, name="soletrando-leitura",
         ).start()
 
-    def _run(self, text, language, rate, voice, generation):
+    def set_rate(self, rate):
+        """Atualiza a velocidade do proximo trecho, sem reiniciar a leitura."""
+        with self._lock:
+            self._rate = int(rate)
+
+    def _run(self, text, language, voice, generation):
         try:
             process = subprocess.Popen(
-                _powershell(_SPEAK_SCRIPT), stdin=subprocess.PIPE,
-                stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+                _powershell(_STREAM_SPEAK_SCRIPT), stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                 creationflags=_NO_WINDOW,
             )
             with self._lock:
@@ -369,15 +445,23 @@ class SpeechReader:
                     return
                 self._process = process
                 self._pending = False
-            request = json.dumps(
-                {
-                    "text": text, "language": language,
+            for chunk in speech_chunks(text):
+                with self._lock:
+                    if generation != self._generation:
+                        return
+                    rate = self._rate
+                request = json.dumps({
+                    "text": chunk, "language": language,
                     "culture": preferred_culture(language),
-                    "voice": voice or "", "rate": int(rate),
-                },
-                ensure_ascii=False,
-            )
-            _output, error = process.communicate(request.encode("utf-8"))
+                    "voice": voice or "", "rate": rate,
+                }, ensure_ascii=False)
+                process.stdin.write(request.encode("utf-8") + b"\n")
+                process.stdin.flush()
+                if process.stdout.readline().strip() != b"DONE":
+                    break
+            process.stdin.close()
+            error = process.stderr.read()
+            process.wait()
             with self._lock:
                 current = generation == self._generation
             if current and self._on_done:
@@ -389,7 +473,7 @@ class SpeechReader:
                     self._on_done(False, error.decode("utf-8", errors="replace").strip())
                 else:
                     self._on_done(True, "")
-        except (OSError, subprocess.SubprocessError) as exc:
+        except (OSError, ValueError, subprocess.SubprocessError) as exc:
             if generation == self._generation and self._on_done:
                 self._on_done(False, str(exc))
         finally:

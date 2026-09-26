@@ -14,6 +14,8 @@ DEFAULT_CONFIG = {
     "hotkey_quit": "ctrl+shift+q",
     # Atalho global para ler em voz alta o texto selecionado. "" desativa.
     "hotkey_read": "ctrl+alt+a",
+    "hotkey_speech_slower": "shift+f9",
+    "hotkey_speech_faster": "shift+f10",
     # large-v3-turbo: 809M params (praticamente o tamanho do medium) com
     # precisao de classe "large" e varias vezes mais rapido. Torna o medium
     # obsoleto em qualidade e velocidade.
@@ -72,6 +74,14 @@ READ_KEY_OPTIONS = [
     ("Pause", "pause"),
 ]
 
+SPEECH_SPEED_KEY_OPTIONS = [
+    ("Desativado", ""),
+    ("Shift+F9", "shift+f9"),
+    ("Shift+F10", "shift+f10"),
+    ("F10", "f10"),
+    ("F11", "f11"),
+]
+
 MODEL_OPTIONS = [
     ("tiny (mais rápido)", "tiny"),
     ("base", "base"),
@@ -117,6 +127,7 @@ INSERT_MODE_OPTIONS = [
 VALID_HOTKEY_TOGGLE_KEYS = {key for _, key in HOTKEY_OPTIONS}
 VALID_HOTKEY_QUIT_KEYS = {key for _, key in QUIT_KEY_OPTIONS}
 VALID_HOTKEY_READ_KEYS = {key for _, key in READ_KEY_OPTIONS}
+VALID_SPEECH_SPEED_KEYS = {key for _, key in SPEECH_SPEED_KEY_OPTIONS}
 HOTKEY_MODIFIERS = {"ctrl", "alt", "shift"}
 HOTKEY_BASE_KEYS = (
     set("abcdefghijklmnopqrstuvwxyz0123456789")
@@ -134,7 +145,8 @@ VALID_SPEECH_LANGUAGES = {key for _, key in SPEECH_LANGUAGE_OPTIONS}
 TECHNICAL_LOG_KEYS = (
     "model", "language", "speech_language", "speech_voices", "speech_rate",
     "insert_mode",
-    "hotkey_toggle", "hotkey_quit", "hotkey_read", "beep_enabled",
+    "hotkey_toggle", "hotkey_quit", "hotkey_read",
+    "hotkey_speech_slower", "hotkey_speech_faster", "beep_enabled",
     "live_preview_enabled", "save_history", "log_transcripts",
     "clipboard_private", "overlay_width", "overlay_height",
     "overlay_recording_seconds", "overlay_done_seconds",
@@ -144,7 +156,7 @@ TECHNICAL_LOG_KEYS = (
 MAX_VOICE_NAME_LENGTH = 200
 
 
-def normalize_hotkey_spec(value, preset_keys):
+def normalize_hotkey_spec(value, preset_keys, allow_shift_function=False):
     """Aceita F1-F12 isoladas, sugestoes e combinacoes com Ctrl/Alt."""
     if not isinstance(value, str):
         return None
@@ -160,7 +172,9 @@ def normalize_hotkey_spec(value, preset_keys):
     parts = [aliases.get(part, part) for part in parts]
     modifiers, base = parts[:-1], parts[-1]
     if (
-        not {"ctrl", "alt"}.intersection(modifiers)
+        not ({"ctrl", "alt"}.intersection(modifiers)
+             or (allow_shift_function and modifiers == ["shift"]
+                 and base in {f"f{number}" for number in range(1, 13)}))
         or len(set(modifiers)) != len(modifiers)
         or any(modifier not in HOTKEY_MODIFIERS for modifier in modifiers)
         or base not in HOTKEY_BASE_KEYS
@@ -233,6 +247,22 @@ def sanitize_config(cfg):
         normalized["hotkey_toggle"], normalized["hotkey_quit"]
     }:
         normalized["hotkey_read"] = ""
+    for key in ("hotkey_speech_slower", "hotkey_speech_faster"):
+        speed_key = normalize_hotkey_spec(
+            normalized.get(key), VALID_SPEECH_SPEED_KEYS,
+            allow_shift_function=True,
+        )
+        normalized[key] = DEFAULT_CONFIG[key] if speed_key is None else speed_key
+    occupied = {
+        normalized["hotkey_toggle"], normalized["hotkey_quit"],
+        normalized["hotkey_read"],
+    }
+    for key in ("hotkey_speech_slower", "hotkey_speech_faster"):
+        speed_key = normalized[key]
+        if speed_key in occupied:
+            normalized[key] = ""
+        elif speed_key:
+            occupied.add(speed_key)
     if normalized["model"] not in VALID_MODEL_KEYS:
         normalized["model"] = DEFAULT_CONFIG["model"]
     if not is_valid_language(normalized.get("language")):

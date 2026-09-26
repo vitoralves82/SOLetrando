@@ -35,6 +35,7 @@ from soletrando_config import (
     MODEL_OPTIONS,
     QUIT_KEY_OPTIONS,
     READ_KEY_OPTIONS,
+    SPEECH_RATE_OPTIONS,
     SPEECH_LANGUAGE_OPTIONS,
     VALID_MODEL_KEYS,
     describe_config_for_log,
@@ -577,6 +578,8 @@ tray_icon = None
 current_hotkey_toggle = None
 current_hotkey_quit = None
 current_hotkey_read = None
+current_hotkey_slower = None
+current_hotkey_faster = None
 recording_session = 0      # identifica cada gravacao (usado pelo watchdog)
 watchdog_timer = None      # cancelado ao parar (antes vazava 1 thread/gravacao)
 status_overlay = StatusOverlay(
@@ -784,6 +787,8 @@ ERROR_HOTKEY_ALREADY_REGISTERED = 1409
 HOTKEY_ID_TOGGLE = 1
 HOTKEY_ID_QUIT = 2
 HOTKEY_ID_READ = 3
+HOTKEY_ID_SLOWER = 4
+HOTKEY_ID_FASTER = 5
 
 _VK_BY_NAME = {
     "scroll lock": 0x91,
@@ -1092,12 +1097,18 @@ def register_hotkeys():
         hotkey_manager.set_callback(HOTKEY_ID_TOGGLE, "gravar", toggle)
         hotkey_manager.set_callback(HOTKEY_ID_QUIT, "encerrar", request_shutdown)
         hotkey_manager.set_callback(HOTKEY_ID_READ, "ler", toggle_reading)
+        hotkey_manager.set_callback(HOTKEY_ID_SLOWER, "desacelerar", slow_reading)
+        hotkey_manager.set_callback(HOTKEY_ID_FASTER, "acelerar", speed_reading)
         specs = {
             HOTKEY_ID_TOGGLE: config["hotkey_toggle"],
             HOTKEY_ID_QUIT: config["hotkey_quit"],
         }
         if config["hotkey_read"]:
             specs[HOTKEY_ID_READ] = config["hotkey_read"]
+        if config["hotkey_speech_slower"]:
+            specs[HOTKEY_ID_SLOWER] = config["hotkey_speech_slower"]
+        if config["hotkey_speech_faster"]:
+            specs[HOTKEY_ID_FASTER] = config["hotkey_speech_faster"]
         results = hotkey_manager.apply(specs)
         if results is not None:
             _hotkey_backend = "win32"
@@ -1126,12 +1137,14 @@ def _register_hotkeys_fallback():
     LowLevelHooksTimeout descrito no topo da secao, entao ele e ultimo recurso.
     """
     global current_hotkey_toggle, current_hotkey_quit, current_hotkey_read
+    global current_hotkey_slower, current_hotkey_faster
     global _hotkey_backend
 
     _hotkey_backend = "keyboard"
 
     # Remove hotkeys anteriores se existirem
-    for handle in (current_hotkey_toggle, current_hotkey_quit, current_hotkey_read):
+    for handle in (current_hotkey_toggle, current_hotkey_quit, current_hotkey_read,
+                   current_hotkey_slower, current_hotkey_faster):
         try:
             if handle is not None:
                 keyboard.remove_hotkey(handle)
@@ -1140,6 +1153,8 @@ def _register_hotkeys_fallback():
     current_hotkey_toggle = None
     current_hotkey_quit = None
     current_hotkey_read = None
+    current_hotkey_slower = None
+    current_hotkey_faster = None
 
     try:
         current_hotkey_toggle = keyboard.add_hotkey(config["hotkey_toggle"], toggle)
@@ -1147,6 +1162,14 @@ def _register_hotkeys_fallback():
         if config["hotkey_read"]:
             current_hotkey_read = keyboard.add_hotkey(
                 config["hotkey_read"], toggle_reading
+            )
+        if config["hotkey_speech_slower"]:
+            current_hotkey_slower = keyboard.add_hotkey(
+                config["hotkey_speech_slower"], slow_reading
+            )
+        if config["hotkey_speech_faster"]:
+            current_hotkey_faster = keyboard.add_hotkey(
+                config["hotkey_speech_faster"], speed_reading
             )
         log(f"Hotkeys registradas (hook do 'keyboard'): "
             f"toggle={config['hotkey_toggle']}, quit={config['hotkey_quit']}")
@@ -1976,14 +1999,16 @@ def change_insert_mode(mode_key):
 
 
 SETTINGS_KEYS = {
-    "language", "hotkey_toggle", "hotkey_quit", "hotkey_read", "insert_mode",
+    "language", "hotkey_toggle", "hotkey_quit", "hotkey_read",
+    "hotkey_speech_slower", "hotkey_speech_faster", "insert_mode",
     "beep_enabled", "live_preview_enabled", "speech_language", "speech_voices",
     "speech_rate",
     "vocabulary", "corrections", "overlay_width", "overlay_height",
     "overlay_recording_seconds", "overlay_done_seconds", "save_history",
     "log_transcripts", "clipboard_private",
 }
-HOTKEY_KEYS = ("hotkey_toggle", "hotkey_quit", "hotkey_read")
+HOTKEY_KEYS = ("hotkey_toggle", "hotkey_quit", "hotkey_read",
+               "hotkey_speech_slower", "hotkey_speech_faster")
 
 
 def _save_settings(values):
@@ -1992,11 +2017,14 @@ def _save_settings(values):
     requested_model = values.get("model", previous_model)
     previous_hotkeys = {key: config[key] for key in HOTKEY_KEYS}
     previous_language = config["language"]
+    previous_rate = config["speech_rate"]
     for key in SETTINGS_KEYS:
         if key in values:
             config[key] = values[key]
     # update() sem clear(): outra thread pode ler config[...] neste instante.
     config.update(sanitize_config(config))
+    if config["speech_rate"] != previous_rate:
+        speech_reader.set_rate(config["speech_rate"])
     save_config(config)
     status_overlay.configure(
         config["overlay_width"], config["overlay_height"]
@@ -2185,10 +2213,40 @@ def stop_reading(show_message=True):
 
 def toggle_reading():
     """Atalho de leitura: le a selecao ou, se ja estiver lendo, interrompe."""
+    log("Atalho de leitura acionado")
     if speech_reader.is_active() or _reading_capture_active:
         stop_reading()
         return
     read_selection("")
+
+
+def change_reading_rate(direction):
+    """Avanca um nivel de velocidade; o trecho atual termina normalmente."""
+    options = [rate for _label, rate in SPEECH_RATE_OPTIONS]
+    current = config["speech_rate"]
+    if direction > 0:
+        new_rate = next((rate for rate in options if rate > current), options[-1])
+    else:
+        new_rate = next((rate for rate in reversed(options) if rate < current),
+                        options[0])
+    config["speech_rate"] = new_rate
+    speech_reader.set_rate(new_rate)
+    save_config(config)
+    label = next(label for label, rate in SPEECH_RATE_OPTIONS if rate == new_rate)
+    suffix = " Próximo trecho." if speech_reader.is_active() else ""
+    status_overlay.set_state("reading" if suffix else "done",
+                             f"Velocidade: {label}.{suffix}",
+                             hide_after=None if suffix else 2.5,
+                             force_show=True)
+    log(f"Velocidade da leitura ajustada para {new_rate}")
+
+
+def slow_reading():
+    change_reading_rate(-1)
+
+
+def speed_reading():
+    change_reading_rate(1)
 
 
 def _copy_selection_with_keyboard():
@@ -2221,6 +2279,7 @@ def read_selection(overlay_selection=""):
             )
             return
         if ok:
+            log("Leitura por voz concluida")
             status_overlay.set_state(
                 "done", "Leitura concluída.", hide_after=2.0,
                 force_show=True,
@@ -2261,11 +2320,13 @@ def read_selection(overlay_selection=""):
             if request_id != _reading_request:
                 return
         if not text:
+            log("Leitura: nenhuma selecao de texto capturada")
             status_overlay.set_state(
                 "error", "Não consegui ler a seleção. Tente copiar como texto simples.",
                 hide_after=4.0, force_show=True,
             )
             return
+        log(f"Leitura: {len(text)} caracteres capturados")
         speech_reader.set_on_done(finished)
         status_overlay.set_state(
             "reading", "Lendo o texto selecionado...",
