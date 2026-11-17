@@ -990,7 +990,7 @@ def show_settings_window(config, on_save, model_options=None, actions=None,
                 "Windows > Hora e idioma > Fala > Adicionar vozes e clique em "
                 "Atualizar lista. A lista mostra as vozes SAPI 5, as mesmas "
                 "de Painel de Controle > Fala.",
-                10, top=10,
+                13, top=10,
             )
             fill_voices()
             if "list_voices" in actions:

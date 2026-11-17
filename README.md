@@ -42,7 +42,7 @@ Pressione **Scroll Lock**, fale e pressione de novo: o texto aparece onde estive
 | **Shift+F10** | Acelerar a leitura um nível |
 | **Ctrl+Shift+Q** | Encerrar o SOLetrando |
 
-Os três podem ser trocados em **Configurações** ou no menu do ícone da bandeja. A tecla de leitura também pode ser desativada. Atalhos globais valem em todos os programas; se uma combinação atrapalhar outro aplicativo, escolha outra.
+Os atalhos de ditado, encerramento e leitura podem ser trocados em **Configurações** ou no menu do ícone da bandeja. Os atalhos de velocidade podem ser trocados em **Configurações > Leitura**. A tecla de leitura e os atalhos de velocidade também podem ser desativados. Atalhos globais valem em todos os programas; se uma combinação atrapalhar outro aplicativo, escolha outra.
 
 Para ditado e leitura, você pode manter uma sugestão ou digitar seu próprio atalho em **Configurações**. Aceitam-se **F1 a F12** isoladas ou combinações de duas ou três teclas com **Ctrl** ou **Alt**, como **Ctrl+K** e **Ctrl+Alt+K**. As sugestões antigas de uma tecla continuam disponíveis. **Salvar** aplica as mudanças sem fechar a janela; **Fechar** descarta apenas as alterações ainda não salvas.
 
