@@ -1,3 +1,7 @@
+import json
+import subprocess
+import sys
+import textwrap
 import unittest
 
 from soletrando_ui import (
@@ -32,6 +36,8 @@ class SettingsHelpersTests(unittest.TestCase):
             "hotkey_toggle": "scroll lock",
             "hotkey_quit": "ctrl+shift+q",
             "hotkey_read": "ctrl+alt+a",
+            "hotkey_speech_slower": "shift+f9",
+            "hotkey_speech_faster": "shift+f10",
             "overlay_width": 320,
             "overlay_height": 110,
         }
@@ -59,6 +65,23 @@ class SettingsHelpersTests(unittest.TestCase):
         )
         self.assertEqual(problem[0], "reading")
 
+    def test_custom_hotkeys_are_validated_before_saving(self):
+        values = self.valid_values(
+            hotkey_toggle=" Alt + Ctrl + K ",
+            hotkey_read="Ctrl + Shift + F12",
+        )
+        self.assertIsNone(validate_settings(values))
+        self.assertEqual(values["hotkey_toggle"], "ctrl+alt+k")
+        self.assertEqual(values["hotkey_read"], "ctrl+shift+f12")
+        self.assertEqual(
+            validate_settings(self.valid_values(hotkey_toggle="shift+k"))[0],
+            "dictation",
+        )
+        function_keys = self.valid_values(hotkey_toggle="F9", hotkey_read="F12")
+        self.assertIsNone(validate_settings(function_keys))
+        self.assertEqual(function_keys["hotkey_toggle"], "f9")
+        self.assertEqual(function_keys["hotkey_read"], "f12")
+
     def test_overlay_size_must_be_within_limits(self):
         self.assertEqual(
             validate_settings(self.valid_values(overlay_width=50))[0], "overlay"
@@ -66,6 +89,15 @@ class SettingsHelpersTests(unittest.TestCase):
         self.assertEqual(
             validate_settings(self.valid_values(overlay_height=None))[0], "overlay"
         )
+
+    def test_speed_keys_accept_function_keys_and_reject_collisions(self):
+        values = self.valid_values(
+            hotkey_speech_slower="F10", hotkey_speech_faster="F11",
+        )
+        self.assertIsNone(validate_settings(values))
+        self.assertEqual(values["hotkey_speech_slower"], "f10")
+        self.assertEqual(validate_settings(self.valid_values(
+            hotkey_speech_faster="shift+f9"))[0], "reading")
 
 
 class VoiceChoicesTests(unittest.TestCase):
@@ -106,6 +138,103 @@ class VoiceChoicesTests(unittest.TestCase):
         self.assertEqual(
             voice_choices(None, "pt", "Microsoft Francisca"),
             [(AUTO_VOICE_LABEL, ""), ("Microsoft Francisca", "Microsoft Francisca")],
+        )
+
+
+@unittest.skipUnless(sys.platform == "win32", "Requer janelas do Windows")
+class SettingsWindowTests(unittest.TestCase):
+    def test_voice_and_rate_save_with_existing_overlay_root(self):
+        script = textwrap.dedent('''
+            import json
+            import os
+            import time
+            import tkinter as tk
+            from tkinter import ttk
+            from soletrando_config import DEFAULT_CONFIG, MODEL_OPTIONS
+            from soletrando_ui import show_settings_window
+
+            overlay_root = tk.Tk()
+            overlay_root.withdraw()
+            original_tk = tk.Tk
+            chosen_voice = "Microsoft Francisca (Natural) - Portuguese (Brazil)"
+            saved = []
+            windows = []
+
+            def descendants(widget):
+                for child in widget.winfo_children():
+                    yield child
+                    yield from descendants(child)
+
+            def settings_root(*args, **kwargs):
+                root = original_tk(*args, **kwargs)
+
+                def choose_and_save():
+                    boxes = [w for w in descendants(root)
+                             if isinstance(w, ttk.Combobox)]
+                    rate = next((b for b in boxes
+                                 if "Rápida (≈1,3×)" in b.cget("values")), None)
+                    voice = next((b for b in boxes
+                                  if chosen_voice in b.cget("values")), None)
+                    if rate is None or voice is None:
+                        root.after(100, choose_and_save)
+                        return
+                    rate.set("Rápida (≈1,3×)")
+                    voice.set(chosen_voice)
+                    toggle = next(b for b in boxes
+                                  if "ScrollLock" in b.cget("values"))
+                    read = next(b for b in boxes
+                                if "Desativado" in b.cget("values"))
+                    toggle.set("Ctrl+Alt+K")
+                    read.set("Ctrl+Shift+F12")
+                    save = next(w for w in descendants(root)
+                                if isinstance(w, ttk.Button)
+                                and w.cget("text") == "Salvar")
+                    save.invoke()
+                    windows.append(root.winfo_exists())
+
+                root.after(300, choose_and_save)
+                return root
+
+            tk.Tk = settings_root
+            show_settings_window(
+                dict(DEFAULT_CONFIG), saved.append,
+                model_options=MODEL_OPTIONS,
+                actions={"list_voices": lambda: [
+                    {"name": chosen_voice, "culture": "pt-BR"},
+                ]},
+            )
+            for _ in range(100):
+                overlay_root.update()
+                if saved:
+                    break
+                time.sleep(0.05)
+            print("RESULT=" + json.dumps({
+                "rate": saved[0]["speech_rate"] if saved else None,
+                "voice": saved[0]["speech_voices"].get("pt") if saved else None,
+                "toggle": saved[0]["hotkey_toggle"] if saved else None,
+                "read": saved[0]["hotkey_read"] if saved else None,
+                "open": windows[0] if windows else None,
+            }), flush=True)
+            # Tk foi criado em duas threads; encerrar sem destruí-lo em outra.
+            os._exit(0 if saved else 2)
+        ''')
+        result = subprocess.run(
+            [sys.executable, "-c", script], capture_output=True,
+            text=True, timeout=12,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        marker = next(
+            line for line in result.stdout.splitlines()
+            if line.startswith("RESULT=")
+        )
+        saved = json.loads(marker.removeprefix("RESULT="))
+        self.assertEqual(saved["rate"], 2)
+        self.assertEqual(saved["toggle"], "ctrl+alt+k")
+        self.assertEqual(saved["read"], "ctrl+shift+f12")
+        self.assertEqual(saved["open"], 1)
+        self.assertEqual(
+            saved["voice"],
+            "Microsoft Francisca (Natural) - Portuguese (Brazil)",
         )
 
 

@@ -14,6 +14,8 @@ DEFAULT_CONFIG = {
     "hotkey_quit": "ctrl+shift+q",
     # Atalho global para ler em voz alta o texto selecionado. "" desativa.
     "hotkey_read": "ctrl+alt+a",
+    "hotkey_speech_slower": "shift+f9",
+    "hotkey_speech_faster": "shift+f10",
     # large-v3-turbo: 809M params (praticamente o tamanho do medium) com
     # precisao de classe "large" e varias vezes mais rapido. Torna o medium
     # obsoleto em qualidade e velocidade.
@@ -72,6 +74,14 @@ READ_KEY_OPTIONS = [
     ("Pause", "pause"),
 ]
 
+SPEECH_SPEED_KEY_OPTIONS = [
+    ("Desativado", ""),
+    ("Shift+F9", "shift+f9"),
+    ("Shift+F10", "shift+f10"),
+    ("F10", "f10"),
+    ("F11", "f11"),
+]
+
 MODEL_OPTIONS = [
     ("tiny (mais rápido)", "tiny"),
     ("base", "base"),
@@ -95,12 +105,12 @@ SPEECH_LANGUAGE_OPTIONS = [
 ]
 
 SPEECH_RATE_OPTIONS = [
-    ("Bem devagar", -4),
-    ("Devagar", -2),
-    ("Normal", 0),
-    ("Rápida", 2),
-    ("Bem rápida", 4),
-    ("Muito rápida", 6),
+    ("Bem devagar (≈0,7×)", -4),
+    ("Devagar (≈0,85×)", -2),
+    ("Normal (1,0×)", 0),
+    ("Rápida (≈1,3×)", 2),
+    ("Bem rápida (≈1,7×)", 4),
+    ("Muito rápida (≈2,1×)", 6),
 ]
 
 QUIT_KEY_OPTIONS = [
@@ -117,6 +127,15 @@ INSERT_MODE_OPTIONS = [
 VALID_HOTKEY_TOGGLE_KEYS = {key for _, key in HOTKEY_OPTIONS}
 VALID_HOTKEY_QUIT_KEYS = {key for _, key in QUIT_KEY_OPTIONS}
 VALID_HOTKEY_READ_KEYS = {key for _, key in READ_KEY_OPTIONS}
+VALID_SPEECH_SPEED_KEYS = {key for _, key in SPEECH_SPEED_KEY_OPTIONS}
+HOTKEY_MODIFIERS = {"ctrl", "alt", "shift"}
+HOTKEY_BASE_KEYS = (
+    set("abcdefghijklmnopqrstuvwxyz0123456789")
+    | {f"f{number}" for number in range(1, 25)}
+    | {"space", "esc", "tab", "enter", "backspace", "insert", "delete",
+       "home", "end", "page up", "page down", "print screen", "pause",
+       "scroll lock"}
+)
 VALID_MODEL_KEYS = {key for _, key in MODEL_OPTIONS}
 VALID_INSERT_MODES = {key for _, key in INSERT_MODE_OPTIONS}
 VALID_SPEECH_LANGUAGES = {key for _, key in SPEECH_LANGUAGE_OPTIONS}
@@ -126,7 +145,8 @@ VALID_SPEECH_LANGUAGES = {key for _, key in SPEECH_LANGUAGE_OPTIONS}
 TECHNICAL_LOG_KEYS = (
     "model", "language", "speech_language", "speech_voices", "speech_rate",
     "insert_mode",
-    "hotkey_toggle", "hotkey_quit", "hotkey_read", "beep_enabled",
+    "hotkey_toggle", "hotkey_quit", "hotkey_read",
+    "hotkey_speech_slower", "hotkey_speech_faster", "beep_enabled",
     "live_preview_enabled", "save_history", "log_transcripts",
     "clipboard_private", "overlay_width", "overlay_height",
     "overlay_recording_seconds", "overlay_done_seconds",
@@ -134,6 +154,38 @@ TECHNICAL_LOG_KEYS = (
 
 
 MAX_VOICE_NAME_LENGTH = 200
+
+
+def normalize_hotkey_spec(value, preset_keys, allow_shift_function=False):
+    """Aceita F1-F12 isoladas, sugestoes e combinacoes com Ctrl/Alt."""
+    if not isinstance(value, str):
+        return None
+    value = value.strip().lower()
+    if value in preset_keys:
+        return value
+    if value in {f"f{number}" for number in range(1, 13)}:
+        return value
+    parts = [part.strip() for part in value.split("+")]
+    if not 2 <= len(parts) <= 3 or any(not part for part in parts):
+        return None
+    aliases = {"control": "ctrl", "controle": "ctrl", "escape": "esc"}
+    parts = [aliases.get(part, part) for part in parts]
+    modifiers, base = parts[:-1], parts[-1]
+    if (
+        not ({"ctrl", "alt"}.intersection(modifiers)
+             or (allow_shift_function and modifiers == ["shift"]
+                 and base in {f"f{number}" for number in range(1, 13)}))
+        or len(set(modifiers)) != len(modifiers)
+        or any(modifier not in HOTKEY_MODIFIERS for modifier in modifiers)
+        or base not in HOTKEY_BASE_KEYS
+    ):
+        return None
+    ordered = [modifier for modifier in ("ctrl", "alt", "shift")
+               if modifier in modifiers]
+    canonical = "+".join(ordered + [base])
+    if canonical in {"ctrl+alt+delete", "ctrl+shift+esc"}:
+        return None
+    return canonical
 
 
 def normalize_speech_voices(value):
@@ -175,18 +227,42 @@ def sanitize_config(cfg):
             normalized["overlay_width"] = DEFAULT_CONFIG["overlay_width"]
             normalized["overlay_height"] = DEFAULT_CONFIG["overlay_height"]
 
-    if normalized["hotkey_toggle"] not in VALID_HOTKEY_TOGGLE_KEYS:
-        normalized["hotkey_toggle"] = DEFAULT_CONFIG["hotkey_toggle"]
+    toggle = normalize_hotkey_spec(
+        normalized["hotkey_toggle"], VALID_HOTKEY_TOGGLE_KEYS
+    )
+    normalized["hotkey_toggle"] = toggle or DEFAULT_CONFIG["hotkey_toggle"]
     if normalized["hotkey_quit"] not in VALID_HOTKEY_QUIT_KEYS:
         normalized["hotkey_quit"] = DEFAULT_CONFIG["hotkey_quit"]
-    if normalized.get("hotkey_read") not in VALID_HOTKEY_READ_KEYS:
-        normalized["hotkey_read"] = DEFAULT_CONFIG["hotkey_read"]
+    read = normalize_hotkey_spec(
+        normalized.get("hotkey_read"), VALID_HOTKEY_READ_KEYS
+    )
+    normalized["hotkey_read"] = (
+        DEFAULT_CONFIG["hotkey_read"] if read is None else read
+    )
+    if normalized["hotkey_toggle"] == normalized["hotkey_quit"]:
+        normalized["hotkey_toggle"] = DEFAULT_CONFIG["hotkey_toggle"]
     # A mesma tecla nao pode gravar e ler ao mesmo tempo. Em conflito, a
     # leitura e desativada em vez de trocar silenciosamente o atalho de gravar.
     if normalized["hotkey_read"] in {
         normalized["hotkey_toggle"], normalized["hotkey_quit"]
     }:
         normalized["hotkey_read"] = ""
+    for key in ("hotkey_speech_slower", "hotkey_speech_faster"):
+        speed_key = normalize_hotkey_spec(
+            normalized.get(key), VALID_SPEECH_SPEED_KEYS,
+            allow_shift_function=True,
+        )
+        normalized[key] = DEFAULT_CONFIG[key] if speed_key is None else speed_key
+    occupied = {
+        normalized["hotkey_toggle"], normalized["hotkey_quit"],
+        normalized["hotkey_read"],
+    }
+    for key in ("hotkey_speech_slower", "hotkey_speech_faster"):
+        speed_key = normalized[key]
+        if speed_key in occupied:
+            normalized[key] = ""
+        elif speed_key:
+            occupied.add(speed_key)
     if normalized["model"] not in VALID_MODEL_KEYS:
         normalized["model"] = DEFAULT_CONFIG["model"]
     if not is_valid_language(normalized.get("language")):

@@ -3,6 +3,7 @@ import unittest
 from soletrando_config import (
     DEFAULT_CONFIG,
     describe_config_for_log,
+    normalize_hotkey_spec,
     sanitize_config,
 )
 
@@ -81,6 +82,30 @@ class SanitizeConfigTests(unittest.TestCase):
             sanitize_config({"hotkey_read": "ctrl+alt+l"})["hotkey_read"],
             "ctrl+alt+l",
         )
+
+    def test_custom_hotkeys_are_normalized_and_persisted(self):
+        config = sanitize_config({
+            "hotkey_toggle": " Alt + Ctrl + K ",
+            "hotkey_read": "Ctrl + Shift + F12",
+        })
+        self.assertEqual(config["hotkey_toggle"], "ctrl+alt+k")
+        self.assertEqual(config["hotkey_read"], "ctrl+shift+f12")
+        self.assertEqual(sanitize_config(config), config)
+
+    def test_function_keys_are_available_for_both_actions(self):
+        config = sanitize_config({
+            "hotkey_toggle": "F9", "hotkey_read": "F12",
+        })
+        self.assertEqual(config["hotkey_toggle"], "f9")
+        self.assertEqual(config["hotkey_read"], "f12")
+
+    def test_custom_hotkeys_require_ctrl_or_alt_and_at_most_three_keys(self):
+        for value in (
+            "shift+k", "k", "ctrl+alt+shift+k", "ctrl+ctrl+k",
+            "ctrl+alt+delete", "ctrl+shift+esc", "ctrl+alt+unknown",
+        ):
+            with self.subTest(value=value):
+                self.assertIsNone(normalize_hotkey_spec(value, set()))
 
 
 class ConfigLogTests(unittest.TestCase):
